@@ -1,0 +1,42 @@
+# Crate on its own, using an slskd you already run (in Docker, natively, or on
+# another machine).
+#
+#   cp .env.example .env          # set SLSKD_URL, SLSKD_API_KEY, DOWNLOADS_DIR, MUSIC_DIR
+#   mkdir -p crate-data
+#   docker compose -f docker-compose.existing-slskd.yml up -d --build
+#
+#   Crate → http://localhost:9325 (CRATE_PORT)
+#
+# The important part: DOWNLOADS_DIR must be the *host* folder your slskd saves
+# finished downloads to, so Crate can see the files and move them into MUSIC_DIR.
+
+services:
+  crate:
+    build: .
+    image: crate:local
+    container_name: crate
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      - CRATE_SLSKD_URL=${SLSKD_URL:-http://host.docker.internal:5030}
+      - CRATE_SLSKD_API_KEY=${SLSKD_API_KEY:?set SLSKD_API_KEY in .env}
+      - CRATE_SLSKD_DOWNLOADS_DIR=/downloads
+      - CRATE_LIBRARY_DIR=/music
+      - CRATE_MB_CONTACT=${MB_CONTACT:-crate-self-hosted}
+    volumes:
+      - ./crate-data:/data
+      - ${DOWNLOADS_DIR:?set DOWNLOADS_DIR in .env}:/downloads
+      - ${MUSIC_DIR:?set MUSIC_DIR in .env}:/music
+    ports:
+      - "${CRATE_PORT:-9325}:9325"
+    # Lets http://host.docker.internal reach slskd on this machine (needed on Linux).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    # If slskd runs in another compose project, you can join its network instead and
+    # set SLSKD_URL=http://slskd:5030. Find the network name with `docker network ls`.
+    # networks: [slskd_net]
+
+# networks:
+#   slskd_net:
+#     external: true
+#     name: slskd_default

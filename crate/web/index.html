@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crate</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23e8a33d'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%23181410'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #f5f0e8; --bg2: #ece5d9; --card: #fffaf2; --line: #ddd3c3;
+  --ink: #241d16; --muted: #7a6d5f; --accent: #c7801c; --accent-ink: #fff;
+  --have: #2f8a4c; --active: #c7801c; --search: #3b6fb6; --queued: #7a5bb5;
+  --bad: #b8483a; --skip: #9b8f82;
+  --shadow: 0 1px 2px rgba(40,30,20,.06), 0 4px 16px rgba(40,30,20,.06);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14110e; --bg2: #1c1814; --card: #211c17; --line: #342c24;
+    --ink: #efe6da; --muted: #9b8f82; --accent: #e8a33d; --accent-ink: #1a140d;
+    --have: #5cc27f; --active: #e8a33d; --search: #6ea2ec; --queued: #a98be0;
+    --bad: #e2705f; --skip: #6f655b;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.25);
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+a { color: inherit; }
+button, input, select { font: inherit; color: inherit; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; }
+
+/* header */
+header { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+.bar { max-width: 1180px; margin: 0 auto; padding: 0 16px; height: 58px; display: flex; align-items: center; gap: 20px; }
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.02em; font-size: 19px; text-decoration: none; }
+.disc { width: 24px; height: 24px; border-radius: 50%; background:
+  radial-gradient(circle, var(--bg) 0 3px, var(--accent) 3.5px 5px, #1b1611 5.5px 100%);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
+nav { display: flex; gap: 2px; }
+nav a { text-decoration: none; padding: 7px 12px; border-radius: 8px; color: var(--muted); font-weight: 550; font-size: 14px; }
+nav a:hover { color: var(--ink); background: var(--bg2); }
+nav a.on { color: var(--ink); background: var(--bg2); }
+nav .badge { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px;
+  background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 700; text-align: center; line-height: 18px; }
+.conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted);
+  max-width: 340px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--skip); flex: none; }
+.dot.ok { background: var(--have); box-shadow: 0 0 0 3px color-mix(in srgb, var(--have) 25%, transparent); }
+.dot.bad { background: var(--bad); }
+
+main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 80px; }
+h1 { font-size: 28px; letter-spacing: -.02em; margin: 0; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 28px 0 12px; font-weight: 700; }
+.sub { color: var(--muted); }
+
+.btn { border: 1px solid var(--line); background: var(--card); padding: 7px 13px; border-radius: 8px; cursor: pointer;
+  font-weight: 600; font-size: 13.5px; white-space: nowrap; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { filter: brightness(1.07); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.btn.ghost:hover { color: var(--ink); background: var(--bg2); }
+.btn.danger:hover { color: var(--bad); border-color: var(--bad); }
+.btn.sm { padding: 4px 9px; font-size: 12.5px; }
+.btn:disabled { opacity: .5; cursor: default; }
+
+.banner { background: color-mix(in srgb, var(--accent) 14%, var(--card)); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
+  padding: 12px 16px; border-radius: 10px; margin-bottom: 20px; display: flex; gap: 12px; align-items: center; }
+.banner.bad { background: color-mix(in srgb, var(--bad) 12%, var(--card)); border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }
+
+/* add artist search */
+.addbox { position: relative; margin: 18px 0 8px; }
+.addbox input { width: 100%; padding: 14px 16px 14px 44px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--card); font-size: 16px; box-shadow: var(--shadow); outline: none; }
+.addbox input:focus { border-color: var(--accent); }
+.addbox svg { position: absolute; left: 15px; top: 15px; color: var(--muted); }
+.results { position: absolute; left: 0; right: 0; top: calc(100% + 6px); background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; z-index: 10; max-height: 60vh; overflow-y: auto; }
+.result { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--line); }
+.result:first-child { border-top: 0; }
+.result .meta { flex: 1; min-width: 0; }
+.result .name { font-weight: 650; }
+.result .desc, .result .known { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.result .known { font-size: 12.5px; margin-top: 2px; }
+.result .known b { color: var(--ink); font-weight: 550; }
+.result .cover { width: 64px; flex: none; border-radius: 8px; box-shadow: none; }
+.result .cover .ph { font-size: 18px; }
+.cover.loading .ph { animation: pulse 1.2s infinite; }
+.cover img.photo { object-position: 50% 22%; }
+.cover .src { position: absolute; left: 0; right: 0; bottom: 0; font-size: 9.5px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.65)); padding: 8px 2px 3px; text-align: center; z-index: 1; white-space: nowrap; }
+.result .cover .src { font-size: 8.5px; letter-spacing: .02em; }
+.empty { padding: 18px; color: var(--muted); text-align: center; }
+
+/* artist grid */
+.toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.toolbar .grow { flex: 1; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 18px; }
+.acard { text-decoration: none; display: block; }
+.cover { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--bg2);
+  box-shadow: var(--shadow); }
+.cover .ph { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 800; font-size: 34px;
+  color: rgba(255,255,255,.85); letter-spacing: -.03em; }
+.cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.acard:hover .cover { transform: translateY(-2px); transition: transform .15s; }
+.acard .name { font-weight: 700; margin-top: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acard .stat { font-size: 12.5px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.meter { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 7px; }
+.meter i { display: block; height: 100%; background: var(--have); border-radius: 2px; transition: width .4s; }
+.meter.dl i { background: var(--active); }
+.pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--active); animation: pulse 1.4s infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
+
+/* artist page */
+.hero { display: flex; gap: 22px; align-items: flex-end; margin-bottom: 8px; }
+.hero .cover { width: 148px; flex: none; }
+.hero .info { flex: 1; min-width: 0; }
+.hero .stats { display: flex; gap: 18px; margin-top: 10px; flex-wrap: wrap; font-size: 14px; }
+.hero .stats b { font-size: 18px; }
+.hero .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin: 24px 0 16px; overflow-x: auto; }
+.tabs button { background: none; border: 0; padding: 9px 12px; cursor: pointer; color: var(--muted); font-weight: 600;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.tabs button.on { color: var(--ink); border-bottom-color: var(--accent); }
+.tabs .n { font-weight: 500; opacity: .7; margin-left: 3px; }
+.tabs .sp { flex: 1; }
+.tabs label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; padding: 0 4px; }
+
+.albums { display: flex; flex-direction: column; gap: 2px; }
+.album { display: grid; grid-template-columns: 56px 1fr auto; gap: 14px; align-items: center; padding: 10px; border-radius: 10px; }
+.album:hover { background: var(--card); }
+.album .cover { width: 56px; border-radius: 6px; box-shadow: none; }
+.album .cover .ph { font-size: 16px; }
+.album .t { font-weight: 650; }
+.album .m { font-size: 13px; color: var(--muted); }
+.album .d { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+.album .right { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.album .acts { display: flex; gap: 4px; opacity: .0; transition: opacity .12s; }
+.album:hover .acts, .album:focus-within .acts { opacity: 1; }
+.album.dim { opacity: .55; }
+.prog { height: 3px; background: var(--line); border-radius: 2px; margin-top: 6px; max-width: 360px; overflow: hidden; }
+.prog i { display: block; height: 100%; background: var(--active); transition: width .4s; }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; padding: 3px 9px;
+  border-radius: 99px; white-space: nowrap; background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--c); }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+.pill.anim::before { animation: pulse 1.4s infinite; }
+.s-have { --c: var(--have); } .s-downloading, .s-importing { --c: var(--active); } .s-searching { --c: var(--search); }
+.s-queued { --c: var(--queued); } .s-not_found, .s-failed { --c: var(--bad); } .s-skipped { --c: var(--skip); }
+.s-wanted, .s-missing, .s-upcoming { --c: var(--muted); }
+
+/* queue + activity */
+.list { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.row { display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); }
+.row:first-child { border-top: 0; }
+.row .cover { width: 44px; border-radius: 5px; box-shadow: none; }
+.row .cover .ph { font-size: 14px; }
+.row .t a { text-decoration: none; font-weight: 650; }
+.row .t a:hover { text-decoration: underline; }
+/* duplicates */
+.dsum { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; padding: 14px 16px; margin: 18px 0 8px; }
+.dsum .big { font-size: 20px; font-weight: 750; }
+.dsum .bulk { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.dnote { font-size: 13px; color: var(--muted); margin: 6px 2px 0; }
+.dgroup { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin-top: 14px; overflow: hidden; }
+.dgroup .hd { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.dgroup .hd .t { font-weight: 700; }
+.dgroup .hd .k { font-size: 12.5px; color: var(--muted); }
+.dgroup .hd .save { margin-left: auto; font-size: 12.5px; color: var(--muted); }
+.dcopy { display: grid; grid-template-columns: 92px 1fr auto; gap: 12px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--line); }
+.dcopy:first-of-type { border-top: 0; }
+.dcopy.sugg { background: color-mix(in srgb, var(--have) 7%, transparent); }
+.dcopy .info { min-width: 0; }
+.dcopy .info .mono { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); margin-top: 2px; }
+.dcopy .tags { display: inline-flex; gap: 6px; margin-left: 6px; }
+.tag { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: var(--bg2); color: var(--muted); white-space: nowrap; }
+.tag.good { background: color-mix(in srgb, var(--have) 16%, transparent); color: var(--have); }
+.fmt { display: inline-block; font-size: 12px; font-weight: 800; letter-spacing: .03em; padding: 4px 8px; border-radius: 6px; text-align: center; min-width: 58px;
+  background: color-mix(in srgb, var(--c) 15%, transparent); color: var(--c); }
+.fmt.lossless { --c: var(--have); } .fmt.lossy { --c: var(--active); }
+@media (max-width: 720px) {
+  .dcopy { grid-template-columns: 76px 1fr; }
+  .dcopy > :last-child { grid-column: 1 / -1; }
+  .dsum .bulk { margin-left: 0; }
+}
+.ev { display: grid; grid-template-columns: 74px 1fr; gap: 12px; padding: 9px 14px; border-top: 1px solid var(--line); font-size: 14px; }
+.ev:first-child { border-top: 0; }
+.ev time { color: var(--muted); font-size: 12.5px; padding-top: 1px; }
+.ev.warn { border-left: 3px solid var(--active); } .ev.error { border-left: 3px solid var(--bad); }
+.ev.success { border-left: 3px solid var(--have); } .ev.info { border-left: 3px solid transparent; }
+
+/* settings */
+.form { display: grid; gap: 18px; max-width: 760px; }
+.fs { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+.fs h3 { margin: 0 0 4px; font-size: 16px; }
+.fs > p { margin: 0 0 14px; color: var(--muted); font-size: 13.5px; }
+.field { display: grid; grid-template-columns: 210px 1fr; gap: 6px 16px; align-items: start; padding: 9px 0; }
+.field label { font-weight: 600; font-size: 14px; padding-top: 7px; }
+.field .hint { grid-column: 2; font-size: 12.5px; color: var(--muted); margin-top: -2px; }
+.field input[type=text], .field input[type=password], .field input[type=number], .field select {
+  width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); outline: none; }
+.field input:focus, .field select:focus { border-color: var(--accent); }
+.checks { display: flex; flex-wrap: wrap; gap: 6px 16px; padding-top: 7px; }
+.checks label { font-weight: 500; padding: 0; display: flex; gap: 6px; align-items: center; }
+.testres { font-size: 13px; margin-top: 10px; display: grid; gap: 4px; }
+.ok { color: var(--have); } .bad { color: var(--bad); }
+.savebar { position: sticky; bottom: 12px; display: flex; gap: 10px; align-items: center; justify-content: flex-end;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; box-shadow: var(--shadow); }
+
+.toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+  padding: 10px 16px; border-radius: 10px; font-size: 14px; font-weight: 550; z-index: 50; box-shadow: var(--shadow);
+  opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: 1; }
+.blank { text-align: center; padding: 60px 20px; color: var(--muted); }
+.blank .big { font-size: 20px; color: var(--ink); font-weight: 700; margin-bottom: 6px; }
+
+@media (max-width: 720px) {
+  .bar { gap: 10px; height: auto; padding-top: 10px; padding-bottom: 10px; flex-wrap: wrap; }
+  nav { order: 3; width: 100%; overflow-x: auto; }
+  .conn { max-width: 50vw; }
+  .hero { flex-direction: column; align-items: flex-start; }
+  .hero .cover { width: 112px; }
+  .album { grid-template-columns: 48px 1fr; }
+  .album .cover { width: 48px; }
+  .album .right { grid-column: 1 / -1; justify-content: flex-start; flex-wrap: wrap; }
+  .album .acts { opacity: 1; }
+  .field { grid-template-columns: 1fr; }
+  .field .hint { grid-column: 1; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px; }
+  .row { grid-template-columns: 44px 1fr; }
+  .row > :last-child { grid-column: 2; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <a class="logo" href="#/"><span class="disc"></span>Crate</a>
+    <nav id="nav">
+      <a href="#/" data-v="artists">Artists</a>
+      <a href="#/queue" data-v="queue">Queue <span class="badge" id="qbadge" hidden></span></a>
+      <a href="#/duplicates" data-v="duplicates">Duplicates</a>
+      <a href="#/activity" data-v="activity">Activity</a>
+      <a href="#/settings" data-v="settings">Settings</a>
+    </nav>
+    <a class="conn" id="conn" href="#/settings" title=""><span class="dot"></span><span>Checking slskd…</span></a>
+  </div>
+</header>
+<main id="view"></main>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const view = $("#view");
+let status = null, timer = null, route = "";
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { method: opts.method || "GET",
+    headers: opts.body ? {"Content-Type": "application/json"} : {},
+    body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 2600);
+}
+function hue(s) { let h = 0; for (const c of s || "") h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
+function initials(s) { return (s || "?").replace(/^the\s+/i, "").split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase(); }
+const caa = (mbid, size = 250) => mbid ? `https://coverartarchive.org/release-group/${mbid}/front-${size}` : null;
+const sized = (url, w) => url ? url.replace(/([?&]width=)\d+/, "$1" + w) : null;
+/* Image with fallbacks: tries each source in turn, shows initials if none load.
+   srcs: [{url, photo, label}] or plain URLs. */
+function art(srcs, label, cls = "") {
+  const h = hue(label);
+  const bg = `linear-gradient(135deg, hsl(${h} 45% 38%), hsl(${(h + 40) % 360} 50% 22%))`;
+  const list = srcs.map(x => typeof x === "string" ? { url: x } : x).filter(x => x && x.url);
+  const img = list.length ? `<img loading="lazy" alt="" data-srcs="${esc(JSON.stringify(list))}" data-i="0" class="${list[0].photo ? "photo" : ""}" src="${esc(list[0].url)}" onerror="nextImg(this)" onload="imgLoaded(this)">` : "";
+  return `<div class="cover ${cls}"><div class="ph" style="background:${bg}">${esc(initials(label))}</div>${img}</div>`;
+}
+function nextImg(el) {
+  const list = JSON.parse(el.dataset.srcs || "[]"), i = +el.dataset.i + 1;
+  if (i >= list.length) { const s = el.parentNode && el.parentNode.querySelector(".src"); if (s) s.remove(); el.remove(); return; }
+  el.dataset.i = i; el.className = list[i].photo ? "photo" : ""; el.src = list[i].url;
+}
+function imgLoaded(el) {
+  const cur = JSON.parse(el.dataset.srcs || "[]")[+el.dataset.i] || {};
+  const box = el.parentNode; if (!box) return;
+  let s = box.querySelector(".src");
+  if (cur.label) { if (!s) { s = document.createElement("div"); s.className = "src"; box.appendChild(s); } s.textContent = cur.label; }
+  else if (s) s.remove();
+}
+function cover(mbid, label, size = 250) { return art([caa(mbid, size)], label); }
+function artistArt(a, size = 250) {
+  return art([a.image && { url: sized(a.image, size >= 500 ? 600 : 320), photo: true }, caa(a.cover_mbid, size)], a.name);
+}
+function ago(iso) {
+  if (!iso) return "";
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 0) { const f = -s; return f < 3600 ? `in ${Math.round(f / 60)}m` : f < 86400 ? `in ${Math.round(f / 3600)}h` : `in ${Math.round(f / 86400)}d`; }
+  if (s < 60) return "just now"; if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`; return `${Math.floor(s / 86400)}d ago`;
+}
+const today = new Date().toISOString().slice(0, 10);
+const LABEL = { have: "In library", downloading: "Downloading", importing: "Importing", searching: "Searching",
+  queued: "Source found", not_found: "Not found", failed: "Failed", skipped: "Skipped", wanted: "Wanted",
+  missing: "Missing", upcoming: "Upcoming" };
+function effStatus(a) { return a.status === "wanted" && a.release_date && a.release_date > today ? "upcoming" : a.status; }
+function pill(a) {
+  const s = effStatus(a);
+  const anim = ["downloading", "searching", "importing"].includes(s) ? " anim" : "";
+  return `<span class="pill s-${s}${anim}">${LABEL[s] || s}${s === "downloading" && a.progress != null ? ` · ${Math.round(a.progress)}%` : ""}</span>`;
+}
+
+/* ---------------- status / header ---------------- */
+async function refreshStatus() {
+  try { status = await api("/api/status"); } catch { return; }
+  const c = $("#conn"), s = status.slskd || {};
+  c.querySelector(".dot").className = "dot " + (s.ok ? "ok" : s.ok === false ? "bad" : "");
+  c.querySelector("span:last-child").textContent = s.ok ? s.message : (s.message || "slskd not connected");
+  c.title = s.message || "";
+  const n = ["searching", "queued", "downloading", "importing"].reduce((t, k) => t + (status.counts[k] || 0), 0);
+  const b = $("#qbadge"); b.hidden = !n; b.textContent = n;
+}
+function banner() {
+  if (!status) return "";
+  if (!status.configured) return `<div class="banner"><div style="flex:1"><b>Connect slskd to start downloading.</b> Add your slskd address and API key in Settings.</div><a class="btn primary" href="#/settings">Open Settings</a></div>`;
+  if (status.slskd && status.slskd.ok === false) return `<div class="banner bad"><div style="flex:1"><b>Can't use slskd right now.</b> ${esc(status.slskd.message)}</div><a class="btn" href="#/settings">Settings</a></div>`;
+  return "";
+}
+
+/* ---------------- artists list ---------------- */
+let searchSeq = 0;
+async function viewArtists(first) {
+  const artists = await api("/api/artists");
+  if (first) {
+    view.innerHTML = `
+      <div id="ban"></div>
+      <div class="toolbar"><h1 class="grow">Your artists</h1>
+        <button class="btn ghost" id="rescan" title="Look for albums you already have on disk">Rescan library</button></div>
+      <div class="addbox">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" placeholder="Add an artist — search MusicBrainz…" autocomplete="off">
+        <div class="results" id="res" hidden></div>
+      </div>
+      <div id="grid"></div>`;
+    const q = $("#q"), res = $("#res");
+    let h;
+    q.addEventListener("input", () => { clearTimeout(h); h = setTimeout(() => doSearch(q.value), 350); });
+    q.addEventListener("keydown", e => { if (e.key === "Escape") { res.hidden = true; q.blur(); } });
+    document.addEventListener("click", e => { if (!e.target.closest(".addbox")) res.hidden = true; });
+    q.addEventListener("focus", () => { if (res.innerHTML) res.hidden = false; });
+    $("#rescan").onclick = async e => {
+      e.target.disabled = true;
+      try { const r = await api("/api/library/rescan", { method: "POST" }); toast(`Scanned ${r.folders} album folders · ${r.matched} matched`); render(); }
+      catch (err) { toast(err.message); } finally { e.target.disabled = false; }
+    };
+  }
+  $("#ban").innerHTML = banner();
+  const g = $("#grid");
+  if (!artists.length) {
+    g.innerHTML = `<div class="blank"><div class="big">No artists yet</div>Search above to add one — Crate will pull their discography and start fetching what you don't have.</div>`;
+    return;
+  }
+  g.className = "grid";
+  g.innerHTML = artists.map(a => {
+    const pct = a.total ? Math.round(a.have * 100 / a.total) : 0;
+    const syncing = a.sync_status === "syncing" || a.sync_status === "pending";
+    const line = syncing ? `<span class="pulse"></span>Fetching discography…`
+      : a.active ? `<span class="pulse"></span>${a.active} downloading · ${a.have}/${a.total}`
+      : `${a.have} of ${a.total} releases`;
+    return `<a class="acard" href="#/artist/${a.id}">${artistArt(a)}
+      <div class="name" title="${esc(a.name)}">${esc(a.name)}</div>
+      <div class="stat">${line}</div>
+      <div class="meter${a.active ? " dl" : ""}"><i style="width:${pct}%"></i></div></a>`;
+  }).join("");
+}
+async function doSearch(term) {
+  const res = $("#res"); term = term.trim();
+  if (!term) { res.hidden = true; res.innerHTML = ""; return; }
+  const seq = ++searchSeq;
+  res.hidden = false; res.innerHTML = `<div class="empty">Searching…</div>`;
+  let items;
+  try { items = await api("/api/mb/artists?q=" + encodeURIComponent(term)); }
+  catch (e) { if (seq === searchSeq) res.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  if (seq !== searchSeq) return;
+  if (!items.length) { res.innerHTML = `<div class="empty">No artists found</div>`; return; }
+  res.innerHTML = items.map((a, i) => {
+    const bits = [a.type, a.country, a.begin ? a.begin.slice(0, 4) + (a.end ? "–" + a.end.slice(0, 4) : "") : "", a.disambiguation, a.tags.join(", ")].filter(Boolean);
+    return `<div class="result"><span class="rart" id="ra-${i}">${art([], a.name, "loading")}</span>
+      <div class="meta"><div class="name">${esc(a.name)}</div><div class="desc">${esc(bits.join(" · "))}</div>
+        <div class="known" id="rk-${i}">&nbsp;</div></div>
+      ${a.added ? `<span class="sub" style="font-size:13px">Added</span>` : `<button class="btn primary sm" data-add="${esc(a.mbid)}">Add</button>`}</div>`;
+  }).join("");
+  loadResultInfo(items, seq);
+  res.querySelectorAll("[data-add]").forEach(b => b.onclick = async () => {
+    b.disabled = true; b.textContent = "Adding…";
+    try { const r = await api("/api/artists", { method: "POST", body: { mbid: b.dataset.add } });
+      toast(`Added ${r.artist.name} — fetching discography`); location.hash = "#/artist/" + r.artist.id; }
+    catch (e) { toast(e.message); b.disabled = false; b.textContent = "Add"; }
+  });
+}
+
+/* Fill in pictures + notable releases for search results, a few at a time. */
+async function loadResultInfo(items, seq) {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length && seq === searchSeq) {
+      const i = next++, a = items[i];
+      let info = null;
+      try { info = await api(`/api/mb/artists/${encodeURIComponent(a.mbid)}/info`); } catch {}
+      if (seq !== searchSeq) return;
+      const slot = $("#ra-" + i), known = $("#rk-" + i);
+      if (!slot) return;
+      const srcs = [];
+      if (info && info.image) srcs.push({ url: info.image, photo: true });
+      ((info && info.covers) || []).forEach(m => srcs.push({ url: caa(m), label: "Album art" }));
+      slot.innerHTML = art(srcs, a.name);
+      if (known) {
+        const al = (info && info.albums) || [];
+        known.innerHTML = al.length
+          ? al.slice(0, 3).map(x => `<b>${esc(x.title)}</b>${x.year ? ` (${esc(x.year)})` : ""}`).join(" · ") +
+            (info.release_count >= 25 ? " · and more" : info.release_count > 3 ? ` · +${info.release_count - 3} more` : "")
+          : (info ? "No releases listed on MusicBrainz" : "");
+      }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+}
+
+/* ---------------- artist page ---------------- */
+let artistTab = "Album", showSkipped = false;
+const TYPE_TABS = [["Album", "Albums"], ["EP", "EPs"], ["Single", "Singles"], ["Other", "Other"], ["all", "All"]];
+let lastKey = "";
+function unchanged(first, data) {
+  const k = JSON.stringify(data) + location.hash;
+  if (!first && k === lastKey) return true;
+  lastKey = k; return false;
+}
+async function viewArtist(id, first) {
+  const { artist: a, albums } = await api("/api/artists/" + id);
+  if (unchanged(first, [a, albums, artistTab, showSkipped, status && status.slskd])) return;
+  const tabOf = al => ["Album", "EP", "Single"].includes(al.primary_type) ? al.primary_type : "Other";
+  const counts = {}; albums.forEach(al => { const t = tabOf(al); counts[t] = (counts[t] || 0) + 1; }); counts.all = albums.length;
+  if (first && !counts[artistTab]) artistTab = counts.Album ? "Album" : "all";
+  const list = albums.filter(al => (artistTab === "all" || tabOf(al) === artistTab) && (showSkipped || al.status !== "skipped" || artistTab !== "all" && artistTab !== "Album" && artistTab !== "EP"));
+  const hidden = albums.filter(al => (artistTab === "all" || tabOf(al) === artistTab) && al.status === "skipped").length;
+  const syncing = a.sync_status === "syncing" || a.sync_status === "pending";
+  const err = (a.sync_status || "").startsWith("error") ? `<div class="banner bad">${esc(a.sync_status)}</div>` : "";
+  view.innerHTML = `${banner()}${err}
+    <div class="hero">${artistArt(a, 500)}
+      <div class="info">
+        <a href="#/" class="sub" style="text-decoration:none;font-size:13px">← All artists</a>
+        <h1>${esc(a.name)}</h1>
+        <div class="sub">${esc([a.disambiguation, a.country].filter(Boolean).join(" · "))}${a.last_synced ? ` · discography checked ${ago(a.last_synced)}` : ""}</div>
+        <div class="stats">
+          <span><b>${a.have}</b> <span class="sub">in library</span></span>
+          <span><b>${a.active}</b> <span class="sub">in progress</span></span>
+          <span><b>${a.missing}</b> <span class="sub">missing</span></span>
+          ${syncing ? `<span class="sub" style="display:flex;gap:6px;align-items:center"><span class="pulse"></span>Fetching discography from MusicBrainz…</span>` : ""}
+        </div>
+        <div class="actions">
+          ${a.missing ? `<button class="btn primary" id="dlall">Download all missing</button>` : ""}
+          <button class="btn" id="sync">Refresh discography</button>
+          <a class="btn ghost" href="https://musicbrainz.org/artist/${esc(a.mbid)}" target="_blank" rel="noopener">MusicBrainz ↗</a>
+          <button class="btn ghost danger" id="del">Remove artist</button>
+        </div>
+      </div>
+    </div>
+    <div class="tabs">
+      ${TYPE_TABS.filter(([k]) => counts[k] || k === "all").map(([k, l]) => `<button data-tab="${k}" class="${k === artistTab ? "on" : ""}">${l}<span class="n">${counts[k] || 0}</span></button>`).join("")}
+      <span class="sp"></span>
+      ${hidden && ["all", "Album", "EP"].includes(artistTab) ? `<label><input type="checkbox" id="skp" ${showSkipped ? "checked" : ""}> Show ${hidden} skipped</label>` : ""}
+    </div>
+    <div class="albums">${list.length ? list.map(albumRow).join("") : `<div class="blank">${syncing ? "Loading releases…" : "Nothing here."}</div>`}</div>`;
+  view.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { artistTab = b.dataset.tab; render(true); });
+  const skp = $("#skp"); if (skp) skp.onchange = () => { showSkipped = skp.checked; render(true); };
+  $("#sync").onclick = async () => { await api(`/api/artists/${id}/sync`, { method: "POST" }); toast("Checking MusicBrainz for new releases"); setTimeout(render, 600); };
+  const dl = $("#dlall"); if (dl) dl.onclick = async () => { const r = await api(`/api/artists/${id}/download-all`, { method: "POST" }); toast(`${r.count} release(s) queued`); render(); };
+  $("#del").onclick = async () => {
+    const b = $("#del");
+    if (b.dataset.confirm !== "1") { b.dataset.confirm = "1"; b.textContent = "Click again to remove"; setTimeout(() => { b.dataset.confirm = ""; b.textContent = "Remove artist"; }, 3000); return; }
+    await api("/api/artists/" + id, { method: "DELETE" }); toast(`Removed ${a.name}. Files on disk were kept.`); location.hash = "#/";
+  };
+  bindAlbumActions();
+}
+function albumActions(a) {
+  const s = effStatus(a), b = (act, label, cls = "") => `<button class="btn sm ${cls}" data-act="${act}" data-id="${a.id}">${label}</button>`;
+  const out = [];
+  if (["missing", "skipped"].includes(s)) out.push(b("download", "Download", "primary"));
+  if (["not_found", "failed"].includes(s)) out.push(b("retry", "Search again", "primary"));
+  if (s === "wanted") out.push(b("retry", "Search now"));
+  if (s === "downloading") out.push(b("next_source", "Try another source"));
+  if (["have"].includes(s) && a.status_detail !== "Already in your library") out.push(b("retry", "Re-download", "ghost"));
+  if (!["skipped", "have"].includes(s)) out.push(b("skip", "Skip", "ghost"));
+  if (["missing", "not_found", "wanted", "skipped", "upcoming"].includes(s)) out.push(b("recheck", "I have this", "ghost"));
+  return out.join("");
+}
+function albumRow(a) {
+  const s = effStatus(a);
+  const kind = [a.primary_type, ...(a.secondary_types || [])].filter(Boolean).join(" · ");
+  const tc = a.track_count ? ` · ${a.track_count} tracks` : "";
+  let detail = a.status_detail || "";
+  if (s === "upcoming") detail = `Releases ${a.release_date}`;
+  if (s === "wanted" && !detail) detail = "Waiting for a search slot";
+  if (s === "have" && a.path) detail = `${detail ? detail + " · " : ""}<span class="mono">${esc(a.path)}</span>`; else detail = esc(detail);
+  if (s === "not_found" && a.next_retry) detail += ` <span class="sub">(next try ${ago(a.next_retry)})</span>`;
+  const prog = s === "downloading" ? `<div class="prog"><i style="width:${a.progress || 0}%"></i></div>` : "";
+  return `<div class="album ${s === "skipped" ? "dim" : ""}">${cover(a.mbid, a.title, 250)}
+    <div style="min-width:0"><div class="t">${esc(a.title)}</div>
+      <div class="m">${esc(a.year || "—")} · ${esc(kind)}${tc}</div>
+      <div class="d">${detail}</div>${prog}</div>
+    <div class="right"><div class="acts">${albumActions(a)}</div>${pill(a)}</div></div>`;
+}
+function bindAlbumActions() {
+  view.querySelectorAll("[data-act]").forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try {
+      const r = await api(`/api/albums/${b.dataset.id}/${b.dataset.act}`, { method: "POST" });
+      if (b.dataset.act === "recheck" && r.status !== "have") toast("Couldn't find it in your library folder — check the folder name matches the album title");
+      render();
+    } catch (e) { toast(e.message); b.disabled = false; }
+  });
+}
+
+/* Two-click confirm, then delete finished searches in slskd. */
+function bindClearSearches() {
+  view.querySelectorAll("[data-clear-searches]").forEach(b => b.onclick = async () => {
+    if (b.dataset.confirm !== "1") {
+      b.dataset.confirm = "1"; b.dataset.label = b.textContent; b.textContent = "Click again to clear";
+      setTimeout(() => { if (b.dataset.confirm === "1") { b.dataset.confirm = ""; b.textContent = b.dataset.label; } }, 3000);
+      return;
+    }
+    b.dataset.confirm = ""; b.disabled = true; b.textContent = "Clearing…";
+    try {
+      const r = await api("/api/slskd/clear-searches", { method: "POST" });
+      toast(r.cleared ? `Cleared ${r.cleared} search${r.cleared === 1 ? "" : "es"} from slskd${r.kept ? ` · kept ${r.kept} still running` : ""}`
+                      : `Nothing to clear${r.kept ? ` · ${r.kept} still running` : ""}`);
+    } catch (e) { toast(e.message); }
+    b.disabled = false; b.textContent = b.dataset.label;
+  });
+}
+
+/* ---------------- queue ---------------- */
+async function viewQueue(first) {
+  const q = await api("/api/queue");
+  if (unchanged(first, [q, status && status.slskd])) return;
+  const row = a => `<div class="row">${cover(a.mbid, a.title, 250)}
+    <div style="min-width:0"><div class="t"><a href="#/artist/${a.artist_id}">${esc(a.artist_name)}</a> — ${esc(a.title)} <span class="sub">${esc(a.year || "")}</span></div>
+      <div class="d sub" style="font-size:13px">${esc(a.status_detail || "")}${a.status === "not_found" && a.next_retry ? ` · next try ${ago(a.next_retry)}` : ""}</div>
+      ${a.status === "downloading" ? `<div class="prog"><i style="width:${a.progress || 0}%"></i></div>` : ""}</div>
+    <div class="right" style="display:flex;gap:8px;align-items:center"><div style="display:flex;gap:4px">${albumActions(a)}</div>${pill(a)}</div></div>`;
+  const waiting = q.waiting.filter(a => effStatus(a) !== "upcoming");
+  view.innerHTML = `${banner()}<div class="toolbar"><h1 class="grow">Queue</h1>
+      <button class="btn" data-clear-searches title="Remove finished searches from slskd's Searches page. Running searches are kept.">Clear slskd searches</button></div>
+    <h2>In progress · ${q.active.length}</h2>
+    ${q.active.length ? `<div class="list">${q.active.map(row).join("")}</div>` : `<div class="list"><div class="empty">Nothing downloading right now.</div></div>`}
+    <h2>Waiting · ${waiting.length}</h2>
+    ${waiting.length ? `<div class="list">${waiting.map(row).join("")}</div>` : `<div class="list"><div class="empty">Nothing waiting.</div></div>`}`;
+  bindAlbumActions();
+  bindClearSearches();
+}
+
+/* ---------------- duplicates ---------------- */
+function fmtBytes(n) {
+  if (!n) return "0 MB";
+  if (n >= 1e9) return (n / 1e9).toFixed(n >= 1e10 ? 0 : 1) + " GB";
+  if (n >= 1e6) return Math.round(n / 1e6) + " MB";
+  return Math.max(1, Math.round(n / 1e3)) + " KB";
+}
+function fmtBadge(ext, fm) {
+  const label = ext.toUpperCase() + (fm && fm.bitrate ? " " + fm.bitrate : "");
+  return `<span class="fmt ${fm && fm.lossless ? "lossless" : "lossy"}">${esc(label)}</span>`;
+}
+function confirmClick(b, fn, need = true) {
+  if (need && b.dataset.confirm !== "1") {
+    b.dataset.confirm = "1"; b.dataset.label = b.textContent; b.textContent = "Click again to confirm";
+    setTimeout(() => { if (b.dataset.confirm === "1") { b.dataset.confirm = ""; b.textContent = b.dataset.label; } }, 3000);
+    return;
+  }
+  b.dataset.confirm = ""; fn();
+}
+let dupePoll = null;
+async function viewDupes(first) {
+  const d = await api("/api/dupes");
+  clearTimeout(dupePoll);
+  if (d.state === "scanning") dupePoll = setTimeout(() => { if (location.hash === "#/duplicates") viewDupes(false); }, 800);
+  if (unchanged(first, d)) return;
+  const del = d.action === "delete";
+  const scanBtn = `<button class="btn ${d.scanned_at ? "" : "primary"}" id="dscan" ${d.state === "scanning" ? "disabled" : ""}>${d.state === "scanning" ? "Scanning…" : d.scanned_at ? "Scan again" : "Scan library"}</button>`;
+  let body = "";
+  if (d.state === "scanning") {
+    body = `<div class="blank"><div class="big" style="display:flex;gap:10px;align-items:center;justify-content:center"><span class="pulse"></span>Scanning your library…</div>${d.folders_scanned} album folders checked so far</div>`;
+  } else if (d.state === "error") {
+    body = `<div class="banner bad">${esc(d.error)}</div>`;
+  } else if (!d.scanned_at) {
+    body = `<div class="blank"><div class="big">Find albums you have more than once</div>
+      Crate looks through your music library for the same album in two or more folders, and for folders holding both FLAC and MP3 copies of the tracks.<br>Nothing is removed until you choose.</div>`;
+  } else if (!d.groups.length) {
+    body = `<div class="blank"><div class="big">No duplicates</div>${d.folders_scanned} album folders checked ${ago(d.scanned_at)}.</div>`;
+  } else {
+    const fmts = new Set();
+    d.groups.forEach(g => g.copies.forEach(c => { if (g.type === "copies") fmts.add(c.main); else c.mixed_formats.forEach(f => fmts.add(f)); }));
+    const order = ["flac", "alac", "ape", "wv", "wav", "mp3", "m4a", "aac", "ogg", "opus"];
+    const fmtList = [...fmts].sort((a, b) => (order.indexOf(a) + 100) % 100 - (order.indexOf(b) + 100) % 100 || a.localeCompare(b));
+    body = `<div class="dsum">
+        <div><div class="big">${d.groups.length} duplicate${d.groups.length === 1 ? "" : "s"}</div>
+          <div class="sub" style="font-size:13px">Removing the extra copies frees about ${fmtBytes(d.savings)}</div></div>
+        <div class="bulk">
+          ${fmtList.map(f => `<button class="btn" data-bulk="keep_format" data-fmt="${esc(f)}" title="Everywhere there's a ${esc(f.toUpperCase())} copy, keep the best one and remove the others. Albums without a ${esc(f.toUpperCase())} copy are left alone.">Keep ${esc(f.toUpperCase())} everywhere</button>`).join("")}
+          <button class="btn primary" data-bulk="suggested" title="Keep the suggested copy of every album (highlighted in green).">Apply all suggestions</button>
+        </div>
+      </div>
+      <div class="dnote">${del ? "<b>Removed files are deleted permanently.</b> You can switch to a trash folder in Settings." :
+        `Removed files go to <span class="mono">${esc(d.trash.path)}</span> so you can restore them.`}
+        ${d.trash.size ? ` Trash holds ${fmtBytes(d.trash.size)}. <button class="btn sm ghost danger" id="dempty">Empty trash</button>` : ""}</div>
+      ${d.groups.map(dupeGroup).join("")}`;
+  }
+  view.innerHTML = `<div class="toolbar"><h1 class="grow">Duplicates</h1>${scanBtn}</div>
+    <div class="sub" style="margin-top:4px">${d.scanned_at && d.state !== "scanning" ? `Last scan ${ago(d.scanned_at)} · ${d.folders_scanned} album folders` : "Scans the music library folder set in Settings."}</div>
+    ${body}`;
+
+  $("#dscan").onclick = async () => { await api("/api/dupes/scan", { method: "POST" }); viewDupes(true); };
+  const empty = $("#dempty");
+  if (empty) empty.onclick = () => confirmClick(empty, async () => {
+    const r = await api("/api/dupes/trash/empty", { method: "POST" }); toast(`Emptied trash · freed ${fmtBytes(r.emptied.size)}`); viewDupes(true);
+  });
+  const run = async (b, payload, done) => {
+    b.disabled = true;
+    try {
+      const r = await api("/api/dupes/resolve", { method: "POST", body: payload });
+      const x = r.result;
+      toast(done(x) + ` · ${fmtBytes(x.bytes)} ${del ? "deleted" : "moved to trash"}${x.skipped ? ` · ${x.skipped} left alone` : ""}`);
+      viewDupes(true);
+    } catch (e) { toast(e.message); b.disabled = false; }
+  };
+  view.querySelectorAll("[data-keep]").forEach(b => b.onclick = () => confirmClick(b, () =>
+    run(b, { group: b.dataset.group, keep: b.dataset.keep }, () => "Kept one copy"), del));
+  view.querySelectorAll("[data-rmfmt]").forEach(b => b.onclick = () => confirmClick(b, () =>
+    run(b, { group: b.dataset.group, remove_format: b.dataset.rmfmt }, () => `Removed ${b.dataset.rmfmt.toUpperCase()} files`), del));
+  view.querySelectorAll("[data-bulk]").forEach(b => b.onclick = () => confirmClick(b, () =>
+    run(b, { all: b.dataset.bulk, format: b.dataset.fmt }, x => `Cleaned up ${x.groups} album${x.groups === 1 ? "" : "s"}`)));
+}
+function dupeGroup(g) {
+  const head = `<div class="hd"><span class="t">${esc(g.artist)} — ${esc(g.album)}</span>
+    <span class="k">${g.type === "copies" ? `${g.copies.length} folders` : `${g.copies[0].mixed_formats.map(f => f.toUpperCase()).join(" + ")} in one folder`}</span>
+    ${g.savings ? `<span class="save">frees ${fmtBytes(g.savings)}</span>` : ""}</div>`;
+  if (g.type === "copies") {
+    return `<div class="dgroup">${head}${g.copies.map(c => {
+      const sugg = c.id === g.suggest_keep;
+      const fm = c.formats[c.main];
+      const others = Object.keys(c.formats).filter(e => e !== c.main);
+      return `<div class="dcopy ${sugg ? "sugg" : ""}">${fmtBadge(c.main, fm)}
+        <div class="info"><span>${c.tracks} track${c.tracks === 1 ? "" : "s"}${c.discs > 1 ? ` · ${c.discs} discs` : ""} · ${fmtBytes(c.size)}${others.length ? ` · also ${others.map(e => c.formats[e].count + " " + e.toUpperCase()).join(", ")}` : ""}</span>
+          <span class="tags">${sugg ? `<span class="tag good">Suggested</span>` : ""}${c.crate_album ? `<span class="tag">Downloaded by Crate</span>` : ""}</span>
+          <span class="mono" title="${esc(c.rel)}">${esc(c.rel)}</span></div>
+        <button class="btn sm ${sugg ? "primary" : ""}" data-group="${g.id}" data-keep="${c.id}">Keep this, remove ${g.copies.length > 2 ? "others" : "other"}</button></div>`;
+    }).join("")}</div>`;
+  }
+  const c = g.copies[0];
+  return `<div class="dgroup">${head}${c.mixed_formats.map(e => {
+    const fm = c.formats[e], sugg = (g.suggest_remove_formats || []).includes(e);
+    return `<div class="dcopy ${e === g.suggest_keep_format ? "sugg" : ""}">${fmtBadge(e, fm)}
+      <div class="info"><span>${fm.count} track${fm.count === 1 ? "" : "s"} · ${fmtBytes(fm.size)}</span>
+        <span class="tags">${e === g.suggest_keep_format ? `<span class="tag good">Suggested keep</span>` : ""}</span>
+        <span class="mono" title="${esc(c.rel)}">${esc(c.rel)}</span></div>
+      <button class="btn sm ${sugg ? "primary" : ""}" data-group="${g.id}" data-rmfmt="${esc(e)}">Remove ${esc(e.toUpperCase())} files</button></div>`;
+  }).join("")}</div>`;
+}
+
+/* ---------------- activity ---------------- */
+async function viewActivity(first) {
+  const ev = await api("/api/activity?limit=200");
+  if (unchanged(first, ev)) return;
+  view.innerHTML = `<h1>Activity</h1><h2>Latest ${ev.length}</h2>
+    <div class="list">${ev.length ? ev.map(e => `<div class="ev ${esc(e.level)}"><time title="${esc(e.ts)}">${ago(e.ts)}</time><div>${esc(e.message)}</div></div>`).join("") : `<div class="empty">No activity yet.</div>`}</div>`;
+}
+
+/* ---------------- settings ---------------- */
+const TYPES = ["Album", "EP", "Single", "Broadcast", "Other"];
+async function viewSettings() {
+  const s = await api("/api/settings");
+  const types = s.release_types.split(",").map(x => x.trim().toLowerCase());
+  const f = (key, label, hint, type = "text", extra = "") => `<div class="field"><label for="f-${key}">${label}</label>
+    <input id="f-${key}" name="${key}" type="${type}" value="${esc(s[key])}" ${extra}>${hint ? `<div class="hint">${hint}</div>` : ""}</div>`;
+  view.innerHTML = `<h1>Settings</h1><p class="sub">Changes take effect immediately after saving.</p>
+  <form class="form" id="sf" autocomplete="off">
+    <div class="fs"><h3>slskd connection</h3><p>Create an API key in slskd's config (<span class="mono">web.authentication.api_keys</span>) and paste it here.</p>
+      ${f("slskd_url", "slskd address", "e.g. http://localhost:5030 or http://slskd:5030 in Docker")}
+      ${f("slskd_api_key", "API key", "", "password")}
+      <div class="field"><span></span><div><button type="button" class="btn" id="test">Test connection &amp; folders</button> <button type="button" class="btn ghost" data-clear-searches title="Remove finished searches from slskd's Searches page. Running searches are kept.">Clear slskd searches</button><div class="testres" id="tres"></div></div></div>
+    </div>
+    <div class="fs"><h3>Folders</h3><p>Paths as Crate sees them. If Crate and slskd run in different containers, both must mount the same downloads folder.</p>
+      ${f("slskd_downloads_dir", "slskd downloads folder", "Where slskd puts completed downloads")}
+      ${f("library_dir", "Music library", "Your organised music folder. Also scanned to skip albums you already own.")}
+      <div class="field"><label for="f-import_mode">After download</label>
+        <select id="f-import_mode" name="import_mode">
+          ${[["move", "Move into library"], ["copy", "Copy into library (keep slskd copy)"], ["off", "Leave in slskd downloads folder"]].map(([v, l]) => `<option value="${v}" ${s.import_mode === v ? "selected" : ""}>${l}</option>`).join("")}
+        </select></div>
+      <div class="field"><label for="f-dupes_action">Removing duplicates</label>
+        <select id="f-dupes_action" name="dupes_action">
+          ${[["trash", "Move to a trash folder (.crate-trash in your library)"], ["delete", "Delete permanently"]].map(([v, l]) => `<option value="${v}" ${(s.dupes_action || "trash") === v ? "selected" : ""}>${l}</option>`).join("")}
+        </select><div class="hint">What the Duplicates page does with copies you remove.</div></div>
+      ${f("folder_template", "Folder layout", "Placeholders: {artist} {album} {year} {type}")}
+    </div>
+    <div class="fs"><h3>What to download</h3><p>Applies to releases found from now on. You can always download or skip individual releases on an artist's page.</p>
+      <div class="field"><label>Release types</label><div class="checks">
+        ${TYPES.map(t => `<label><input type="checkbox" data-type="${t.toLowerCase()}" ${types.includes(t.toLowerCase()) ? "checked" : ""}> ${t}</label>`).join("")}</div></div>
+      ${f("exclude_secondary", "Skip if also tagged", "MusicBrainz secondary types to ignore (comma-separated)")}
+      <div class="field"><label for="f-auto_download">Download automatically</label>
+        <div class="checks"><label><input type="checkbox" id="f-auto_download" ${["true", "1", "yes", "on"].includes(String(s.auto_download).toLowerCase()) ? "checked" : ""}> Start downloading missing releases as soon as an artist is added</label></div></div>
+    </div>
+    <div class="fs"><h3>Quality</h3>
+      ${f("preferred_formats", "Formats, best first", "Only these are accepted, e.g. <span class='mono'>flac,mp3</span> or <span class='mono'>mp3</span>")}
+      ${f("min_bitrate", "Minimum MP3 bitrate", "kbps — lower-quality lossy sources are ignored", "number", "min=64 max=320")}
+    </div>
+    <div class="fs"><h3>Behaviour</h3>
+      ${f("search_timeout", "Search time (seconds)", "How long each Soulseek search collects results", "number", "min=10 max=300")}
+      ${f("max_active_searches", "Searches at once", "", "number", "min=1 max=10")}
+      ${f("max_active_downloads", "Albums downloading at once", "", "number", "min=1 max=20")}
+      ${f("stall_minutes", "Give up on a source after", "minutes without progress (incl. waiting in their queue)", "number", "min=5")}
+      ${f("retry_hours", "Retry not-found albums every", "hours (backs off on repeated misses)", "number", "min=1")}
+      ${f("sync_hours", "Check for new releases every", "hours", "number", "min=1")}
+      ${f("mb_contact", "MusicBrainz contact", "Sent in the User-Agent, as MusicBrainz asks. An email or URL is ideal.")}
+    </div>
+    <div class="savebar"><span class="sub" id="savemsg" style="margin-right:auto"></span><button class="btn primary" type="submit">Save settings</button></div>
+  </form>`;
+  const form = $("#sf");
+  const collect = () => {
+    const out = {};
+    form.querySelectorAll("input[name], select[name]").forEach(i => out[i.name] = i.value.trim());
+    out.release_types = [...form.querySelectorAll("[data-type]")].filter(c => c.checked).map(c => c.dataset.type).join(",");
+    out.auto_download = $("#f-auto_download").checked ? "true" : "false";
+    return out;
+  };
+  form.onsubmit = async e => {
+    e.preventDefault();
+    try { await api("/api/settings", { method: "PUT", body: collect() }); $("#savemsg").textContent = "Saved."; toast("Settings saved"); refreshStatus(); }
+    catch (err) { toast(err.message); }
+  };
+  form.addEventListener("input", () => $("#savemsg").textContent = "Unsaved changes");
+  bindClearSearches();
+  $("#test").onclick = async () => {
+    const t = $("#tres"); t.innerHTML = `<span class="sub">Testing…</span>`;
+    try {
+      const r = await api("/api/settings/test", { method: "POST", body: collect() });
+      const sl = r.slskd;
+      const line = (ok, txt) => `<div class="${ok ? "ok" : "bad"}">${ok ? "✓" : "✗"} ${txt}</div>`;
+      t.innerHTML =
+        (sl.ok ? line(sl.logged_in !== false, sl.logged_in !== false ? `slskd connected · Soulseek: ${esc(sl.state || "")}${sl.username ? " as " + esc(sl.username) : ""}` : `slskd reachable but not logged in to Soulseek (${esc(sl.state)})`) : line(false, esc(sl.error))) +
+        line(r.slskd_downloads_dir.exists, `Downloads folder <span class="mono">${esc(r.slskd_downloads_dir.path)}</span> ${r.slskd_downloads_dir.exists ? (r.slskd_downloads_dir.writable ? "found" : "found, but not writable (needed to move files)") : "not found"}`) +
+        line(r.library_dir.exists && r.library_dir.writable, `Library <span class="mono">${esc(r.library_dir.path)}</span> ${r.library_dir.exists ? (r.library_dir.writable ? "found" : "found, but not writable") : "not found"}`);
+    } catch (e) { t.innerHTML = `<div class="bad">${esc(e.message)}</div>`; }
+  };
+}
+
+/* ---------------- router ---------------- */
+async function render(first = false) {
+  const h = location.hash.replace(/^#/, "") || "/";
+  const [, v, id] = h.match(/^\/(\w*)\/?(\d+)?/) || [];
+  document.querySelectorAll("#nav a").forEach(a => a.classList.toggle("on",
+    a.dataset.v === (v === "artist" || !v ? "artists" : v)));
+  try {
+    if (v === "artist" && id) await viewArtist(id, first);
+    else if (v === "queue") await viewQueue(first);
+    else if (v === "activity") await viewActivity(first);
+    else if (v === "duplicates") await viewDupes(first);
+    else if (v === "settings") { if (first) await viewSettings(); }
+    else await viewArtists(first);
+  } catch (e) { view.innerHTML = `<div class="blank"><div class="big">Something went wrong</div>${esc(e.message)}</div>`; }
+}
+function go() {
+  clearInterval(timer);
+  window.scrollTo(0, 0);
+  render(true);
+  const v = (location.hash.match(/^#\/(\w*)/) || [])[1] || "";
+  if (v !== "settings") timer = setInterval(() => {
+    if (document.hidden || document.querySelector('[data-confirm="1"]')) return;
+    const active = document.activeElement;
+    if (active && active.id === "q") { if (v === "" ) viewArtists(false).catch(() => {}); return; }
+    render(false);
+  }, v === "activity" ? 5000 : 3000);
+}
+window.addEventListener("hashchange", go);
+refreshStatus().then(go);
+setInterval(() => { if (!document.hidden) refreshStatus(); }, 5000);
+</script>
+</body>
+</html>

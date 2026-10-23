@@ -1,0 +1,10 @@
+.git
+.env
+**/__pycache__
+data
+crate-data
+slskd
+downloads
+music
+docs
+tests

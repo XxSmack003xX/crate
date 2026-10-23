@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+# runtime data (database, docker volumes)
+data/
+crate-data/
+slskd/
+downloads/
+music/
+
+# your local settings (passwords, API key)
+.env

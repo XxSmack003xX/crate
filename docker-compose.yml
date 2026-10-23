@@ -1,0 +1,57 @@
+# Crate + a new slskd, set up together.
+#
+#   cp .env.example .env          # then edit .env
+#   mkdir -p downloads crate-data slskd
+#   docker compose up -d --build
+#
+#   slskd → http://localhost:5030      Crate → http://localhost:9325 (CRATE_PORT)
+#
+# Already running slskd? Use docker-compose.existing-slskd.yml instead.
+
+services:
+  slskd:
+    image: slskd/slskd:latest
+    container_name: slskd
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - SLSKD_SLSK_USERNAME=${SOULSEEK_USERNAME:?set SOULSEEK_USERNAME in .env}
+      - SLSKD_SLSK_PASSWORD=${SOULSEEK_PASSWORD:?set SOULSEEK_PASSWORD in .env}
+      - SLSKD_SLSK_LISTEN_PORT=${SLSKD_LISTEN_PORT:-50300}
+      - SLSKD_USERNAME=${SLSKD_WEB_USERNAME:-slskd}
+      - SLSKD_PASSWORD=${SLSKD_WEB_PASSWORD:-slskd}
+      # The API key Crate uses (16+ characters).
+      - SLSKD_API_KEY=${SLSKD_API_KEY:?set SLSKD_API_KEY in .env}
+      - SLSKD_DOWNLOADS_DIR=/downloads
+      - SLSKD_INCOMPLETE_DIR=/app/incomplete
+      # Share your library back to the Soulseek network (read-only).
+      - SLSKD_SHARED_DIR=/music
+    volumes:
+      - ./slskd:/app
+      - ${DOWNLOADS_DIR:-./downloads}:/downloads
+      - ${MUSIC_DIR:?set MUSIC_DIR in .env}:/music:ro
+    ports:
+      - "5030:5030"
+      - "${SLSKD_LISTEN_PORT:-50300}:${SLSKD_LISTEN_PORT:-50300}"
+    restart: unless-stopped
+
+  crate:
+    build: .
+    image: crate:local
+    container_name: crate
+    depends_on: [slskd]
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      - CRATE_SLSKD_URL=http://slskd:5030
+      - CRATE_SLSKD_API_KEY=${SLSKD_API_KEY}
+      - CRATE_SLSKD_DOWNLOADS_DIR=/downloads
+      - CRATE_LIBRARY_DIR=/music
+      - CRATE_MB_CONTACT=${MB_CONTACT:-crate-self-hosted}
+    volumes:
+      - ./crate-data:/data
+      # Same host folder slskd downloads into: Crate moves albums out of it.
+      - ${DOWNLOADS_DIR:-./downloads}:/downloads
+      - ${MUSIC_DIR}:/music
+    ports:
+      - "${CRATE_PORT:-9325}:9325"
+    restart: unless-stopped
