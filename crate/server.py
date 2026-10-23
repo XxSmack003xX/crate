@@ -62,6 +62,9 @@ def _album_out(a):
 @route("GET", r"/api/status")
 def status(app, h, m, body):
     counts = {r["status"]: r["n"] for r in app.db.q("SELECT status, COUNT(*) n FROM albums GROUP BY status")}
+    # "missing" only counts albums that are actually out (matches the Missing albums page)
+    counts["missing"] = app.db.one("SELECT COUNT(*) n FROM albums al WHERE al.status = 'missing' AND " + RELEASED,
+                                   (_today(),))["n"]
     return {
         "configured": app.configured(),
         "slskd": app.slskd_status,
@@ -209,6 +212,66 @@ def clear_searches(app, h, m, body):
     return app.clear_searches()
 
 
+@route("GET", r"/api/import")
+def import_state(app, h, m, body):
+    return app.importer.snapshot()
+
+
+@route("POST", r"/api/import/scan")
+def import_scan(app, h, m, body):
+    app.importer.start()
+    return app.importer.snapshot()
+
+
+@route("POST", r"/api/import/add")
+def import_add(app, h, m, body):
+    body = body or {}
+    result = app.importer.add(body.get("items") or [], auto_download=bool(body.get("auto_download")))
+    return {"result": result, **app.importer.snapshot()}
+
+
+RELEASED = "(al.release_date IS NULL OR al.release_date = '' OR al.release_date <= ?)"
+
+
+def _today():
+    import datetime
+    return datetime.date.today().isoformat()
+
+
+@route("GET", r"/api/missing")
+def missing(app, h, m, body):
+    rows = app.db.q(
+        "SELECT al.*, ar.name AS artist_name FROM albums al JOIN artists ar ON ar.id = al.artist_id "
+        "WHERE al.status = 'missing' AND " + RELEASED +
+        " ORDER BY COALESCE(ar.sort_name, ar.name) COLLATE NOCASE, al.release_date DESC", (_today(),))
+    groups, order = {}, []
+    for r in rows:
+        if r["artist_id"] not in groups:
+            groups[r["artist_id"]] = {"artist_id": r["artist_id"], "artist_name": r["artist_name"], "albums": []}
+            order.append(r["artist_id"])
+        groups[r["artist_id"]]["albums"].append(_album_out(r))
+    return {"total": len(rows), "artists": [groups[i] for i in order]}
+
+
+@route("POST", r"/api/missing/download")
+def missing_download(app, h, m, body):
+    """Queue missing albums: all of them, one artist's ({artist_id}), or a list ({album_ids})."""
+    body = body or {}
+    sql, args = "SELECT al.id FROM albums al WHERE al.status = 'missing' AND " + RELEASED, [_today()]
+    if body.get("artist_id"):
+        sql += " AND al.artist_id = ?"
+        args.append(int(body["artist_id"]))
+    ids = [r["id"] for r in app.db.q(sql, args)]
+    if body.get("album_ids"):
+        want = {int(i) for i in body["album_ids"]}
+        ids = [i for i in ids if i in want]
+    for i in ids:
+        app.album_action(i, "download")
+    if ids:
+        app.db.event(f"Queued {len(ids)} missing album(s) to download")
+    return {"queued": len(ids)}
+
+
 @route("GET", r"/api/dupes")
 def dupes(app, h, m, body):
     return app.dupes.snapshot()
@@ -244,7 +307,7 @@ def rescan(app, h, m, body):
 # ----------------------------------------------------------------- handler
 def make_handler(app):
     class Handler(BaseHTTPRequestHandler):
-        server_version = "Crate/1.0"
+        server_version = "Crate/1.1"
 
         def log_message(self, fmt, *args):  # quiet
             pass

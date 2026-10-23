@@ -132,6 +132,10 @@ class DB:
             cols = {r[1] for r in self.conn.execute("PRAGMA table_info(artists)")}
             if "image" not in cols:  # added in 1.1
                 self.conn.execute("ALTER TABLE artists ADD COLUMN image TEXT")
+            if "local_name" not in cols:  # 1.1: artist's folder name in your library, if different
+                self.conn.execute("ALTER TABLE artists ADD COLUMN local_name TEXT")
+            if "auto_download" not in cols:  # 1.1: per-artist override (NULL = use the global setting)
+                self.conn.execute("ALTER TABLE artists ADD COLUMN auto_download INTEGER")
 
     # ---- generic helpers -------------------------------------------------
     def q(self, sql, args=()):

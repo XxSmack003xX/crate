@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 
 from .db import DB, Settings, now_iso, parse_iso
 from .dupes import DupeScanner
+from .importer import LibraryImporter
 from .library import Library
 from .matcher import rank_candidates, search_queries
 from .mb import MusicBrainz
@@ -58,6 +59,7 @@ class App:
         self.mb = MusicBrainz(self.settings)
         self.library = Library(self.settings)
         self.dupes = DupeScanner(self)
+        self.importer = LibraryImporter(self)
         self.stop = threading.Event()
         self.wake = threading.Event()
         self._sync_lock = threading.Lock()
@@ -81,7 +83,7 @@ class App:
 
     def album(self, album_id):
         return self.db.one(
-            "SELECT al.*, ar.name AS artist_name FROM albums al "
+            "SELECT al.*, ar.name AS artist_name, ar.local_name FROM albums al "
             "JOIN artists ar ON ar.id = al.artist_id WHERE al.id = ?", (album_id,))
 
     def check_slskd(self):
@@ -130,14 +132,23 @@ class App:
                           + (f"; kept {kept} still running" if kept else ""))
         return {"cleared": cleared, "kept": kept}
 
+    def find_in_library(self, artist_name, title, local_name=None):
+        """Path of this album in the library, matching the MusicBrainz artist name or the
+        artist's folder name in your library (they can differ, e.g. 'AC_DC' vs 'AC/DC')."""
+        path = self.library.find(artist_name, title)
+        if not path and local_name and local_name != artist_name:
+            path = self.library.find(local_name, title)
+        return path
+
     def rescan_library(self):
         n = self.library.scan()
         self.last_scan = time.monotonic()
         changed = 0
         for a in self.db.q(
-            "SELECT al.id, al.title, ar.name AS artist_name FROM albums al JOIN artists ar ON ar.id = al.artist_id "
+            "SELECT al.id, al.title, ar.name AS artist_name, ar.local_name FROM albums al "
+            "JOIN artists ar ON ar.id = al.artist_id "
             "WHERE al.status IN ('wanted', 'missing', 'not_found', 'failed')"):
-            path = self.library.find(a["artist_name"], a["title"])
+            path = self.find_in_library(a["artist_name"], a["title"], a["local_name"])
             if path:
                 self.db.update_album(a["id"], status="have", status_detail="Already in your library", path=path)
                 changed += 1
@@ -151,6 +162,11 @@ class App:
             fetched = parse_iso(row["fetched_at"])
             if fetched and (_utcnow() - fetched) < timedelta(days=30):
                 info = _loads(row["data"], {})
+                if "titles" not in info:
+                    info = None  # cached before 1.1; refetch to get release titles
+            else:
+                info = None
+            if info is not None:
                 if info.get("image"):
                     self.db.x("UPDATE artists SET image = ? WHERE mbid = ? AND (image IS NULL OR image = '')",
                               (info["image"], mbid))
@@ -201,7 +217,8 @@ class App:
                 groups = self.mb.release_groups(artist["mbid"])
                 types = self.settings.list("release_types")
                 excl = self.settings.list("exclude_secondary")
-                auto = self.settings.bool("auto_download")
+                auto = (bool(artist["auto_download"]) if artist.get("auto_download") is not None
+                        else self.settings.bool("auto_download"))
                 if time.monotonic() - self.last_scan > 60:
                     self.library.scan()
                     self.last_scan = time.monotonic()
@@ -215,7 +232,7 @@ class App:
                         continue
                     follow = g["primary_type"].lower() in types and not any(
                         s.lower() in excl for s in g["secondary_types"])
-                    path = self.library.find(artist["name"], g["title"])
+                    path = self.find_in_library(artist["name"], g["title"], artist.get("local_name"))
                     if path:
                         status, detail = "have", "Already in your library"
                         have += 1
@@ -235,10 +252,13 @@ class App:
                           (now_iso(), artist_id))
                 wanted = self.db.one("SELECT COUNT(*) n FROM albums WHERE artist_id = ? AND status = 'wanted'",
                                      (artist_id,))["n"]
+                missing = self.db.one("SELECT COUNT(*) n FROM albums WHERE artist_id = ? AND status = 'missing'",
+                                      (artist_id,))["n"]
                 if new:
+                    tail = f"{wanted} queued to download" if auto else f"{missing} missing (not set to download)"
                     self.db.event(
-                        f"{artist['name']}: found {new} new release(s); {have} already in library, "
-                        f"{wanted} queued to download", artist_id=artist_id)
+                        f"{artist['name']}: found {new} new release(s); {have} already in library, {tail}",
+                        artist_id=artist_id)
                 self.wake.set()
             except Exception as e:
                 self.db.x("UPDATE artists SET sync_status = ? WHERE id = ?", (f"error: {e}", artist_id))
@@ -251,7 +271,7 @@ class App:
             raise KeyError("album not found")
         if action in ("download", "retry", "want"):
             self._cancel_active(a)
-            path = self.library.find(a["artist_name"], a["title"])
+            path = self.find_in_library(a["artist_name"], a["title"], a.get("local_name"))
             if path and action != "retry":
                 self.db.update_album(album_id, status="have", status_detail="Already in your library", path=path)
             else:
@@ -266,7 +286,7 @@ class App:
                 self._abandon(self.slskd(), a, "skipped by you")
         elif action == "recheck":
             self.library.scan()
-            path = self.library.find(a["artist_name"], a["title"])
+            path = self.find_in_library(a["artist_name"], a["title"], a.get("local_name"))
             if path:
                 self.db.update_album(album_id, status="have", status_detail="Already in your library", path=path)
         else:
@@ -356,7 +376,7 @@ class App:
         now = now_iso()
         today = _utcnow().date().isoformat()
         rows = self.db.q(
-            "SELECT al.*, ar.name AS artist_name FROM albums al JOIN artists ar ON ar.id = al.artist_id "
+            "SELECT al.*, ar.name AS artist_name, ar.local_name FROM albums al JOIN artists ar ON ar.id = al.artist_id "
             "WHERE ar.monitored = 1 "
             "AND ((al.status = 'wanted' AND (al.next_retry IS NULL OR al.next_retry <= ?1)) "
             "     OR (al.status = 'not_found' AND al.next_retry <= ?1)) "
@@ -368,7 +388,7 @@ class App:
             self.library.scan()
             self.last_scan = time.monotonic()
         for a in rows:
-            path = self.library.find(a["artist_name"], a["title"])
+            path = self.find_in_library(a["artist_name"], a["title"], a.get("local_name"))
             if path:
                 self.db.update_album(a["id"], status="have", status_detail="Already in your library", path=path)
                 continue

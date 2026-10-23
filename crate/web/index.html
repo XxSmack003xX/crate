@@ -41,7 +41,7 @@ header { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, v
   radial-gradient(circle, var(--bg) 0 3px, var(--accent) 3.5px 5px, #1b1611 5.5px 100%);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
 nav { display: flex; gap: 2px; }
-nav a { text-decoration: none; padding: 7px 12px; border-radius: 8px; color: var(--muted); font-weight: 550; font-size: 14px; }
+nav a { white-space: nowrap; text-decoration: none; padding: 7px 12px; border-radius: 8px; color: var(--muted); font-weight: 550; font-size: 14px; }
 nav a:hover { color: var(--ink); background: var(--bg2); }
 nav a.on { color: var(--ink); background: var(--bg2); }
 nav .badge { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px;
@@ -57,7 +57,7 @@ h1 { font-size: 28px; letter-spacing: -.02em; margin: 0; }
 h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 28px 0 12px; font-weight: 700; }
 .sub { color: var(--muted); }
 
-.btn { border: 1px solid var(--line); background: var(--card); padding: 7px 13px; border-radius: 8px; cursor: pointer;
+.btn { text-decoration: none; display: inline-block; border: 1px solid var(--line); background: var(--card); padding: 7px 13px; border-radius: 8px; cursor: pointer;
   font-weight: 600; font-size: 13.5px; white-space: nowrap; }
 .btn:hover { border-color: var(--muted); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
@@ -162,6 +162,39 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: v
 .row .t a { text-decoration: none; font-weight: 650; }
 .row .t a:hover { text-decoration: underline; }
 /* duplicates */
+/* import + missing */
+.prog.big { height: 6px; max-width: none; margin: 14px 0 6px; }
+.prog.big i { background: var(--accent); }
+.irow { display: grid; grid-template-columns: 26px 56px minmax(0, 1fr) minmax(0, 1.25fr); gap: 14px; align-items: center;
+  padding: 12px 16px; border-top: 1px solid var(--line); }
+.irow:first-child { border-top: 0; }
+.irow.off { opacity: .55; }
+.irow input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+.irow .cover { width: 56px; border-radius: 8px; box-shadow: none; }
+.irow .cover .ph { font-size: 16px; }
+.irow .cover .src { font-size: 8px; letter-spacing: 0; padding-bottom: 2px; }
+.irow .local .n { font-weight: 700; }
+.irow .local .a, .irow .mb .d { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.irow .mb { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.irow .mb .top { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.irow .mb .arrow { color: var(--muted); }
+.irow select { max-width: 100%; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); font-size: 13.5px; font-weight: 600; min-width: 0; }
+.tag.warn { background: color-mix(in srgb, var(--active) 16%, transparent); color: var(--active); }
+.tag.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.addbar { position: sticky; bottom: 12px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; justify-content: flex-end;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; box-shadow: var(--shadow); margin-top: 16px; }
+.addbar label { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+.mgroup { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin-top: 14px; overflow: hidden; }
+.mgroup .hd { display: flex; gap: 10px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.mgroup .hd a { font-weight: 700; text-decoration: none; }
+.mgroup .hd a:hover { text-decoration: underline; }
+.mgroup .hd .sp { flex: 1; }
+@media (max-width: 720px) {
+  .irow { grid-template-columns: 26px 48px minmax(0, 1fr); }
+  .irow .cover { width: 48px; }
+  .irow .mb { grid-column: 2 / -1; }
+  .addbar { justify-content: flex-start; }
+}
 .dsum { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; background: var(--card); border: 1px solid var(--line);
   border-radius: 12px; padding: 14px 16px; margin: 18px 0 8px; }
 .dsum .big { font-size: 20px; font-weight: 750; }
@@ -312,7 +345,7 @@ const today = new Date().toISOString().slice(0, 10);
 const LABEL = { have: "In library", downloading: "Downloading", importing: "Importing", searching: "Searching",
   queued: "Source found", not_found: "Not found", failed: "Failed", skipped: "Skipped", wanted: "Wanted",
   missing: "Missing", upcoming: "Upcoming" };
-function effStatus(a) { return a.status === "wanted" && a.release_date && a.release_date > today ? "upcoming" : a.status; }
+function effStatus(a) { return (a.status === "wanted" || a.status === "missing") && a.release_date && a.release_date > today ? "upcoming" : a.status; }
 function pill(a) {
   const s = effStatus(a);
   const anim = ["downloading", "searching", "importing"].includes(s) ? " anim" : "";
@@ -344,7 +377,8 @@ async function viewArtists(first) {
     view.innerHTML = `
       <div id="ban"></div>
       <div class="toolbar"><h1 class="grow">Your artists</h1>
-        <button class="btn ghost" id="rescan" title="Look for albums you already have on disk">Rescan library</button></div>
+        <button class="btn ghost" id="rescan" title="Look for albums you already have on disk">Rescan library</button>
+        <a class="btn" href="#/import" title="Find the artists already in your music folder and follow them">Import from library</a></div>
       <div class="addbox">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input id="q" placeholder="Add an artist — search MusicBrainz…" autocomplete="off">
@@ -363,7 +397,8 @@ async function viewArtists(first) {
       catch (err) { toast(err.message); } finally { e.target.disabled = false; }
     };
   }
-  $("#ban").innerHTML = banner();
+  const nMissing = (status && status.counts && status.counts.missing) || 0;
+  $("#ban").innerHTML = banner() + (nMissing ? `<div class="banner"><div style="flex:1"><b>${nMissing} album${nMissing === 1 ? "" : "s"} missing from your library</b> aren't set to download yet.</div><a class="btn primary" href="#/missing">Review missing albums</a></div>` : "");
   const g = $("#grid");
   if (!artists.length) {
     g.innerHTML = `<div class="blank"><div class="big">No artists yet</div>Search above to add one — Crate will pull their discography and start fetching what you don't have.</div>`;
@@ -568,6 +603,173 @@ async function viewQueue(first) {
   bindClearSearches();
 }
 
+/* ---------------- import from library ---------------- */
+const importSel = new Map();   // result id -> {on, mbid}
+let importTab = "new", importPoll = null, importInfo = new Map();
+const CONF = {
+  albums: r => `<span class="tag good" title="Your albums appear in this artist's releases on MusicBrainz">${r.match.overlap} album${r.match.overlap === 1 ? "" : "s"} match</span>`,
+  name: () => `<span class="tag" title="The only MusicBrainz artist with this exact name">Name match</span>`,
+  unsure: () => `<span class="tag warn" title="Several artists share this name, or the name only roughly matches. Check it's the right one.">Check this</span>`,
+};
+function importArt(r, alt) {
+  const info = alt && importInfo.get(alt.mbid);
+  const m = info ? info : r.match;
+  if (!m) return art([], r.local_name);
+  const srcs = [];
+  if (m.image) srcs.push({ url: m.image, photo: true });
+  (m.covers || []).forEach(c => srcs.push({ url: caa(c), label: "Album art" }));
+  return art(srcs, (alt || r.match).name);
+}
+function altLabel(a) {
+  return [a.name, a.disambiguation, a.country, a.begin && a.begin.slice(0, 4)].filter(Boolean).join(" · ");
+}
+async function viewImport(first) {
+  const d = await api("/api/import");
+  clearTimeout(importPoll);
+  const busy = d.state === "scanning" || d.state === "matching";
+  if (busy || d.adding) importPoll = setTimeout(() => { if (location.hash === "#/import") viewImport(false); }, 1000);
+  d.results.forEach(r => { if (!importSel.has(r.id)) importSel.set(r.id, { on: !!r.selected, mbid: r.match && r.match.mbid }); });
+  if (unchanged(first, [d, importTab])) return;
+
+  const groups = {
+    new: d.results.filter(r => r.status === "matched"),
+    none: d.results.filter(r => r.status === "none" || r.status === "error"),
+    done: d.results.filter(r => r.status === "following" || r.status === "added"),
+  };
+  if (first && !groups[importTab].length) importTab = groups.new.length ? "new" : groups.none.length ? "none" : "new";
+  const left = Math.max(0, d.total - d.matched);
+  let body = "";
+  if (d.state === "idle") {
+    body = `<div class="blank"><div class="big">Follow the artists you already have</div>
+      Crate looks through your music folder, works out which artists are in it, and matches each one on MusicBrainz.<br>
+      You review the matches, then add them in one go. Albums you're missing are listed so you can choose what to download.<br><br>
+      <button class="btn primary" id="iscan">Scan music folder</button></div>`;
+  } else if (d.state === "error") {
+    body = `<div class="banner bad">${esc(d.error)}</div>`;
+  } else {
+    if (busy) {
+      const pct = d.total ? Math.round(d.matched * 100 / d.total) : 0;
+      body += `<div class="list" style="padding:14px 16px">
+        <div style="display:flex;gap:10px;align-items:center"><span class="pulse"></span><b>${d.state === "scanning" ? `Scanning folders… ${d.folders}` : `Matching artists on MusicBrainz… ${d.matched} of ${d.total}`}</b></div>
+        <div class="prog big"><i style="width:${pct}%"></i></div>
+        <div class="sub" style="font-size:13px">${d.state === "matching" && left > 5 ? `About ${Math.max(1, Math.round(left * 2.3 / 60))} min left. MusicBrainz allows about one request per second. ` : ""}You can review the matches below while it works.</div></div>`;
+    }
+    if (d.adding) body += `<div class="banner"><span class="pulse"></span><div style="flex:1">Fetching discographies for the artists you added…</div><a class="btn" href="#/missing">Missing albums</a></div>`;
+    const tabs = [["new", "To add", groups.new.length], ["none", "No match", groups.none.length], ["done", "Following", groups.done.length]];
+    body += `<div class="tabs">${tabs.map(([k, l, n]) => `<button data-itab="${k}" class="${k === importTab ? "on" : ""}">${l}<span class="n">${n}</span></button>`).join("")}
+      <span class="sp"></span>${importTab === "new" && groups.new.length ? `<label><a href="#" id="iall">Select all</a> · <a href="#" id="inone">None</a></label>` : ""}</div>`;
+    const list = groups[importTab];
+    body += list.length ? `<div class="list">${list.map(importRow).join("")}</div>`
+      : `<div class="list"><div class="empty">${importTab === "new" ? (busy ? "Matches will appear here…" : "Nothing new to add.") : importTab === "none" ? "Every artist was matched." : "None yet."}</div></div>`;
+    if (importTab === "new" && groups.new.length) {
+      body += `<div class="addbar"><span class="sub" id="icount" style="margin-right:auto"></span>
+        <label title="Off: albums you don't have are listed under Missing albums for you to pick. On: Crate starts downloading them right away."><input type="checkbox" id="iauto"> Download missing albums automatically</label>
+        <button class="btn primary" id="iadd">Add artists</button></div>`;
+    }
+  }
+  view.innerHTML = `<div class="toolbar"><h1 class="grow">Import from library</h1>
+      ${d.state !== "idle" ? `<button class="btn" id="iscan" ${busy ? "disabled" : ""}>${busy ? "Scanning…" : "Scan again"}</button>` : ""}</div>
+    <div class="sub" style="margin-top:4px">${d.state === "done" ? `${d.total} artist${d.total === 1 ? "" : "s"} found in ${d.folders} album folders · scanned ${ago(d.finished_at)}` : "Finds the artists in your music library folder and matches them on MusicBrainz."}</div>
+    ${body}`;
+
+  const sc = $("#iscan"); if (sc) sc.onclick = async () => { await api("/api/import/scan", { method: "POST" }); viewImport(true); };
+  view.querySelectorAll("[data-itab]").forEach(b => b.onclick = () => { importTab = b.dataset.itab; viewImport(true); });
+  const setAll = on => { groups.new.forEach(r => { importSel.get(r.id).on = on; }); viewImport(true); };
+  const ia = $("#iall"); if (ia) ia.onclick = e => { e.preventDefault(); setAll(true); };
+  const inn = $("#inone"); if (inn) inn.onclick = e => { e.preventDefault(); setAll(false); };
+  view.querySelectorAll("[data-ichk]").forEach(c => c.onchange = () => {
+    importSel.get(c.dataset.ichk).on = c.checked; c.closest(".irow").classList.toggle("off", !c.checked); importCount(groups.new);
+  });
+  view.querySelectorAll("[data-ialt]").forEach(sel => sel.onchange = async () => {
+    const r = d.results.find(x => x.id === sel.dataset.ialt), st = importSel.get(r.id);
+    st.mbid = sel.value; st.on = true;
+    const row = sel.closest(".irow"); row.classList.remove("off"); row.querySelector("[data-ichk]").checked = true;
+    const alt = r.alternatives.find(a => a.mbid === sel.value);
+    const tagBox = row.querySelector(".conf"); if (tagBox) tagBox.innerHTML = `<span class="tag">Your choice</span>`;
+    importCount(groups.new);
+    if (!importInfo.has(alt.mbid) && alt.mbid !== r.match.mbid) {
+      try { importInfo.set(alt.mbid, await api(`/api/mb/artists/${encodeURIComponent(alt.mbid)}/info`)); } catch {}
+    }
+    row.querySelector(".ia").innerHTML = importArt(r, alt.mbid === r.match.mbid ? null : alt);
+    const info = importInfo.get(alt.mbid) || (alt.mbid === r.match.mbid ? r.match : null);
+    row.querySelector(".mb .d").textContent = info && info.albums && info.albums.length ? "Releases: " + info.albums.map(x => x.title).join(", ") : "";
+  });
+  const add = $("#iadd");
+  if (add) {
+    importCount(groups.new);
+    add.onclick = async () => {
+      const items = groups.new.filter(r => importSel.get(r.id).on).map(r => ({ id: r.id, mbid: importSel.get(r.id).mbid }));
+      if (!items.length) return toast("Tick the artists you want to add");
+      add.disabled = true;
+      try {
+        const auto = $("#iauto").checked;
+        const res = await api("/api/import/add", { method: "POST", body: { items, auto_download: auto } });
+        toast(`Added ${res.result.added} artist${res.result.added === 1 ? "" : "s"}. ${auto ? "Missing albums will start downloading." : "Fetching discographies; then pick what to download."}`);
+        importTab = "done"; viewImport(true);
+      } catch (e) { toast(e.message); add.disabled = false; }
+    };
+  }
+}
+function importCount(list) {
+  const n = list.filter(r => importSel.get(r.id).on).length;
+  const c = $("#icount"); if (c) c.textContent = `${n} of ${list.length} selected`;
+  const b = $("#iadd"); if (b) { b.textContent = n ? `Add ${n} artist${n === 1 ? "" : "s"}` : "Add artists"; b.disabled = !n; }
+}
+function importRow(r) {
+  const st = importSel.get(r.id) || {};
+  const local = `<div class="local" style="min-width:0"><div class="n">${esc(r.local_name)}</div>
+    <div class="a" title="${esc(r.local_albums.join(", "))}">${r.album_count} album${r.album_count === 1 ? "" : "s"} · ${esc(r.local_albums.slice(0, 3).join(", "))}</div></div>`;
+  if (r.status === "following" || r.status === "added") {
+    return `<div class="irow"><span></span><span class="ia">${importArt(r)}</span>${local}
+      <div class="mb"><div class="top">${r.status === "added" ? `<span class="tag good">Added</span>` : `<span class="tag">Following</span>`}
+        <a href="#/artist/${r.artist_id}" class="btn sm ghost">Open artist</a></div></div></div>`;
+  }
+  if (r.status !== "matched") {
+    return `<div class="irow off"><span></span><span class="ia">${importArt(r)}</span>${local}
+      <div class="mb"><div class="top"><span class="tag bad">${r.status === "error" ? "Lookup failed" : "No match on MusicBrainz"}</span></div>
+      <div class="d">${r.status === "error" ? esc(r.error) : "Rename the folder to the artist's name, or add them from the Artists page search."}</div></div></div>`;
+  }
+  const alts = r.alternatives;
+  const chosen = alts.find(a => a.mbid === st.mbid) || r.match;
+  const info = chosen.mbid === r.match.mbid ? r.match : importInfo.get(chosen.mbid);
+  const releases = info && info.albums && info.albums.length ? "Releases: " + info.albums.map(x => x.title).join(", ") : "";
+  return `<div class="irow ${st.on ? "" : "off"}"><input type="checkbox" data-ichk="${r.id}" ${st.on ? "checked" : ""} aria-label="Add ${esc(r.local_name)}">
+    <span class="ia">${importArt(r, chosen.mbid === r.match.mbid ? null : chosen)}</span>${local}
+    <div class="mb"><div class="top"><span class="arrow">→</span>
+      ${alts.length > 1 ? `<select data-ialt="${r.id}" aria-label="MusicBrainz artist">${alts.map(a => `<option value="${esc(a.mbid)}" ${a.mbid === chosen.mbid ? "selected" : ""}>${esc(altLabel(a))}</option>`).join("")}</select>`
+        : `<b style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(altLabel(chosen))}</b>`}
+      <span class="conf">${chosen.mbid === r.match.mbid ? CONF[r.confidence](r) : `<span class="tag">Your choice</span>`}</span></div>
+      <div class="d" title="${esc(releases)}">${esc(releases)}</div></div></div>`;
+}
+
+/* ---------------- missing albums ---------------- */
+async function viewMissing(first) {
+  const d = await api("/api/missing");
+  if (unchanged(first, d)) return;
+  const row = a => `<div class="row">${cover(a.mbid, a.title, 250)}
+    <div style="min-width:0"><div class="t">${esc(a.title)} <span class="sub">${esc(a.year || "")}</span></div>
+      <div class="sub" style="font-size:13px">${esc([a.primary_type, ...(a.secondary_types || [])].filter(Boolean).join(" · "))}</div></div>
+    <div style="display:flex;gap:6px;align-items:center"><button class="btn sm ghost" data-act="skip" data-id="${a.id}">Skip</button>
+      <button class="btn sm primary" data-mdl="${a.id}">Download</button></div></div>`;
+  view.innerHTML = `<div class="toolbar"><h1 class="grow">Missing albums</h1>
+      ${d.total ? `<button class="btn primary" id="mall">Download all ${d.total}</button>` : ""}</div>
+    <div class="sub" style="margin-top:4px">Albums by artists you follow that aren't in your library and aren't set to download. Choose what to fetch.</div>
+    ${d.total ? d.artists.map(g => `<div class="mgroup"><div class="hd"><a href="#/artist/${g.artist_id}">${esc(g.artist_name)}</a>
+        <span class="sub" style="font-size:13px">${g.albums.length} missing</span><span class="sp"></span>
+        ${g.albums.length > 1 ? `<button class="btn sm" data-mart="${g.artist_id}">Download all ${g.albums.length}</button>` : ""}</div>
+        <div>${g.albums.map(row).join("")}</div></div>`).join("")
+      : `<div class="blank"><div class="big">Nothing missing</div>Every album from the artists you follow is in your library, downloading, or skipped.<br><br><a class="btn" href="#/import">Import from library</a></div>`}`;
+  const go = async (body, b) => {
+    b.disabled = true;
+    try { const r = await api("/api/missing/download", { method: "POST", body }); toast(`${r.queued} album${r.queued === 1 ? "" : "s"} queued to download`); refreshStatus(); viewMissing(true); }
+    catch (e) { toast(e.message); b.disabled = false; }
+  };
+  const all = $("#mall"); if (all) all.onclick = () => confirmClick(all, () => go({}, all), d.total > 10);
+  view.querySelectorAll("[data-mart]").forEach(b => b.onclick = () => go({ artist_id: +b.dataset.mart }, b));
+  view.querySelectorAll("[data-mdl]").forEach(b => b.onclick = () => go({ album_ids: [+b.dataset.mdl] }, b));
+  bindAlbumActions();
+}
+
 /* ---------------- duplicates ---------------- */
 function fmtBytes(n) {
   if (!n) return "0 MB";
@@ -766,12 +968,14 @@ async function render(first = false) {
   const h = location.hash.replace(/^#/, "") || "/";
   const [, v, id] = h.match(/^\/(\w*)\/?(\d+)?/) || [];
   document.querySelectorAll("#nav a").forEach(a => a.classList.toggle("on",
-    a.dataset.v === (v === "artist" || !v ? "artists" : v)));
+    a.dataset.v === (["artist", "import", "missing", ""].includes(v || "") ? "artists" : v)));
   try {
     if (v === "artist" && id) await viewArtist(id, first);
     else if (v === "queue") await viewQueue(first);
     else if (v === "activity") await viewActivity(first);
     else if (v === "duplicates") await viewDupes(first);
+    else if (v === "import") await viewImport(first);
+    else if (v === "missing") await viewMissing(first);
     else if (v === "settings") { if (first) await viewSettings(); }
     else await viewArtists(first);
   } catch (e) { view.innerHTML = `<div class="blank"><div class="big">Something went wrong</div>${esc(e.message)}</div>`; }

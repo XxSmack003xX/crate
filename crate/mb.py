@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.request
 from collections import Counter
 
-VERSION = "1.0"
+VERSION = "1.1"
 # MusicBrainz allows ~1 request/second per client.
 MIN_INTERVAL = float(os.environ.get("CRATE_MB_INTERVAL", "1.1"))
 
@@ -137,7 +137,9 @@ class MusicBrainz:
                    "type": g.get("primary-type") or ""} for g in groups[:4]]
         covers = [g["id"] for g in groups if (g.get("primary-type") in ("Album", "EP", "Single"))][:4]
         return {"image": image, "image_source": source, "albums": albums, "covers": covers,
-                "release_count": len(groups)}
+                "release_count": len(groups),
+                # all release titles (up to 25), used to confirm library-import matches
+                "titles": [g.get("title", "") for g in groups]}
 
     def release_groups(self, artist_mbid):
         """All release groups (albums, EPs, singles...) for an artist."""

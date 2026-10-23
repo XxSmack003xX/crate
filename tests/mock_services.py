@@ -14,6 +14,16 @@ ARTIST = {"id": "a-1", "name": "Test Band", "sort-name": "Test Band", "disambigu
 ARTIST2 = {"id": "a-2", "name": "Test Band", "sort-name": "Test Band", "disambiguation": "jazz trio from Ohio",
            "country": "US", "type": "Group", "score": 90, "life-span": {"begin": "2015"}}
 
+# A third artist, used by the library-import tests.
+ARTIST3 = {"id": "a-3", "name": "Night Owls", "sort-name": "Night Owls", "disambiguation": "", "country": "CA",
+           "type": "Group", "score": 100, "life-span": {"begin": "2009"}}
+OWL_GROUPS = [
+    ("rg-owl1", "Midnight Hours", "Album", [], "2011-04-01", ["Dusk", "Moonrise", "Witching"]),
+    ("rg-owl2", "Dawn Chorus", "Album", [], "2013-09-01", ["First Bird", "Grey Light"]),
+    ("rg-owl3", "Sunrise", "EP", [], "2015", ["Sunrise"]),
+]
+JAZZ_GROUPS = [("rg-jazz", "Late Night Standards", "Album", [], "2017-02-02", ["Blue", "Green"])]
+
 # (rg id, title, primary, secondary, date, tracks)
 GROUPS = [
     ("rg-first", "First Light", "Album", [], "2001-03-01", ["Opening", "Daybreak", "Closing Time"]),
@@ -229,7 +239,18 @@ def make(state):
         # ---- MusicBrainz
         def mb(self, path, qs):
             if path == "artist":
-                return self.send(200, {"artists": [ARTIST, ARTIST2]})
+                q = qs.get("query", [""])[0].lower()
+                hits = [a for a in (ARTIST, ARTIST2) if "test" in q or "band" in q]
+                if "owl" in q:
+                    hits.append(ARTIST3)
+                return self.send(200, {"artists": hits})
+            if path.startswith("artist/") and path.endswith("a-3"):
+                out = dict(ARTIST3)
+                if "url-rels" in qs.get("inc", [""])[0]:
+                    out["relations"] = []
+                    out["release-groups"] = [{"id": g[0], "title": g[1], "primary-type": g[2], "secondary-types": g[3],
+                                              "first-release-date": g[4]} for g in OWL_GROUPS]
+                return self.send(200, out)
             if path.startswith("artist/"):
                 art = ARTIST2 if path.endswith("a-2") else ARTIST
                 out = dict(art)
@@ -247,13 +268,14 @@ def make(state):
                                                   "first-release-date": "2017-02-02"}]
                 return self.send(200, out)
             if path == "release-group":
+                src = {"a-2": JAZZ_GROUPS, "a-3": OWL_GROUPS}.get(qs.get("artist", [""])[0], GROUPS)
                 rgs = [{"id": g[0], "title": g[1], "primary-type": g[2], "secondary-types": g[3],
-                        "first-release-date": g[4]} for g in GROUPS]
+                        "first-release-date": g[4]} for g in src]
                 off = int(qs.get("offset", ["0"])[0])
                 return self.send(200, {"release-group-count": len(rgs), "release-groups": rgs[off:off + 5]})
             if path == "release":
                 rg = qs["release-group"][0]
-                g = next(g for g in GROUPS if g[0] == rg)
+                g = next(g for g in GROUPS + OWL_GROUPS + JAZZ_GROUPS if g[0] == rg)
                 rels = [{"id": "rel-" + rg, "status": "Official", "date": g[4],
                          "media": [{"track-count": len(g[5])}]},
                         {"id": "rel2-" + rg, "status": "Official", "date": "2020",
@@ -261,7 +283,7 @@ def make(state):
                 return self.send(200, {"releases": rels})
             if path.startswith("release/"):
                 rg = path.split("rel-", 1)[1]
-                g = next(g for g in GROUPS if g[0] == rg)
+                g = next(g for g in GROUPS + OWL_GROUPS + JAZZ_GROUPS if g[0] == rg)
                 return self.send(200, {"media": [{"tracks": [{"title": t} for t in g[5]]}]})
             self.send(404)
 

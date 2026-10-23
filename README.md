@@ -24,6 +24,7 @@ Add an artist and Crate pulls their full list of releases from MusicBrainz. It c
 - [How the folders fit together](#how-the-folders-fit-together)
 - [Running without Docker](#running-without-docker)
 - [Using Crate](#using-crate)
+- [Importing the music you already have](#importing-the-music-you-already-have)
 - [How Crate picks a download](#how-crate-picks-a-download)
 - [Duplicate scanner](#duplicate-scanner)
 - [Configuration reference](#configuration-reference)
@@ -36,6 +37,7 @@ Add an artist and Crate pulls their full list of releases from MusicBrainz. It c
 
 ## Features
 
+- **Import your existing collection.** Crate scans your music folder, finds the artists in it, matches each one on MusicBrainz, and lets you add them all at once. It then lists the albums you're missing, so you choose what to download.
 - **Follow artists.** Search MusicBrainz from the web UI. Each result shows the artist's photo (from Wikidata) or album art, plus a few of their albums, so you can pick the right artist when several share a name.
 - **Full discographies.** Crate gets every release from MusicBrainz. You choose which types to follow: albums and EPs by default. Singles, live albums and compilations are skipped unless you turn them on, and you can always download or skip individual releases.
 - **Never downloads what you already have.** Crate scans your music folder, using folder names and, when available, tags, and marks matching albums **In library**.
@@ -119,7 +121,7 @@ Open **http://localhost:5030**, sign in with the web login you chose, and check 
 
 **5. Open Crate**
 
-Go to **http://localhost:9325 → Settings → Test connection & folders**. All three lines should be green. Then go to **Artists** and add someone.
+Go to **http://localhost:9325 → Settings → Test connection & folders**. All three lines should be green. Then go to **Artists** and add someone, or click **Import from library** to follow everyone already in your music folder.
 
 **Optional: forward the Soulseek port.** Forward TCP **50300** (`SLSKD_LISTEN_PORT`) on your router to this machine. Without it, you can still download from most people, but users behind closed ports can't connect to you.
 
@@ -194,7 +196,7 @@ Also set `MUSIC_DIR`, `PUID`/`PGID` and `MB_CONTACT` as in setup A.
 docker compose -f docker-compose.existing-slskd.yml up -d --build
 ```
 
-Open **http://localhost:9325 → Settings → Test connection & folders**. All three lines should be green.
+Open **http://localhost:9325 → Settings → Test connection & folders**. All three lines should be green. Already have a collection? Use **Artists → Import from library**.
 
 > Crate needs permission to **delete** files from slskd's downloads folder (it moves them out) and to **write** to your music folder. Set `PUID`/`PGID` to the user that owns those folders.
 
@@ -235,7 +237,9 @@ To run it in the background on Linux, wrap it in a systemd service, or just use 
 
 | Page | What you can do |
 |---|---|
-| **Artists** | Search and add artists, see how complete each discography is, and **Rescan library** after adding music by hand. |
+| **Artists** | Search and add artists, see how complete each discography is, **Rescan library** after adding music by hand, and **Import from library**. A banner links to **Missing albums** when there are albums waiting for you to choose. |
+| **Import from library** | Follow the artists already in your music folder. See [below](#importing-the-music-you-already-have). |
+| **Missing albums** | Albums by artists you follow that you don't have and that aren't set to download, grouped by artist. **Download** one, **Download all** for an artist, **Download all** overall, or **Skip**. |
 | **Artist page** | Tabs for Albums, EPs, Singles and Other. **Download all missing**, **Refresh discography**, and per-release **Download**, **Skip**, **Search again**, **Try another source** and **I have this** (re-checks your library for that album). |
 | **Queue** | Everything searching or downloading, with live progress, plus what's waiting or not found. **Clear slskd searches** deletes finished searches from slskd's Searches page; running searches are kept. |
 | **Duplicates** | Find and clean up albums you have more than once. See [Duplicate scanner](#duplicate-scanner). |
@@ -243,6 +247,25 @@ To run it in the background on Linux, wrap it in a systemd service, or just use 
 | **Settings** | Connection, folders, release types, formats and bitrate, how many searches and downloads run at once, timeouts, and what happens to removed duplicates. |
 
 Removing an artist never deletes files from disk.
+
+## Importing the music you already have
+
+![Import from library](docs/screenshots/import.png)
+
+**Artists → Import from library → Scan music folder.**
+
+1. **Crate scans your library.** It reads artist and album names from the folders (`Artist/Album`, `Artist - Album`, `Artist/2001 - Album [FLAC]`, multi-disc `CD1`/`CD2` folders), or from tags when `mutagen` is installed. "Various Artists" and loose files are skipped.
+2. **Each artist is matched on MusicBrainz.** When several artists share a name, Crate picks the one whose releases include the albums you have. It also handles folder names that don't exactly match, like `NightOwls` for *Night Owls*. Each match is labelled:
+   - **N albums match**: your albums are among this artist's releases. Ticked.
+   - **Name match**: the only artist with exactly this name. Ticked.
+   - **Check this**: same-name artists, or only a rough match. Not ticked; use the dropdown to choose the right artist.
+   - **No match**: nothing found. Rename the folder, or add the artist from the Artists search.
+3. **Review and add.** Untick anyone you don't want, change a match with the dropdown, then click **Add N artists**. Matching runs at about one artist every two seconds (MusicBrainz's rate limit), and you can start reviewing while it works.
+4. **Choose what to download.** Imported artists **don't auto-download** unless you tick *Download missing albums automatically*. Albums you already have show as **In library**, and the rest go to **Missing albums**, where you can download them one at a time, per artist, or all at once.
+
+![Missing albums](docs/screenshots/missing.png)
+
+Crate remembers each artist's folder name, so albums stored under a different spelling (e.g. `AC_DC` for *AC/DC*) are still recognised as yours. It never moves or renames the music you already have. Running the scan again shows artists you already follow under **Following** and only offers new ones.
 
 ### Album statuses
 
@@ -256,7 +279,7 @@ Removing an artist never deletes files from disk.
 | Not found | No good source yet; it will be retried automatically |
 | Failed | The download finished but couldn't be imported (usually the downloads-folder setting) |
 | Skipped | A release type you don't follow, or one you skipped |
-| Missing | Shown when automatic downloading is turned off; click **Download** |
+| Missing | Not in your library and not set to download, e.g. from an imported artist, or with auto-download off. Listed under **Missing albums**; click **Download** |
 | Upcoming | The release date is in the future; it will be searched once it's out |
 
 ## How Crate picks a download
@@ -303,7 +326,7 @@ Every setting can be changed in the web UI. Settings can also be preset with env
 | `dupes_action` | `trash` | `trash` (move to `<library>/.crate-trash`) or `delete` |
 | `release_types` | `album,ep` | Any of `album,ep,single,broadcast,other` |
 | `exclude_secondary` | `compilation,live,remix,…` | MusicBrainz secondary types to skip |
-| `auto_download` | `true` | If `false`, missing albums wait for you to click Download |
+| `auto_download` | `true` | If `false`, missing albums wait for you to click Download. Artists added through **Import from library** use the choice made on that page instead. |
 | `preferred_formats` | `flac,mp3` | Best first; formats not listed are never downloaded |
 | `min_bitrate` | `256` | kbps, for lossy formats |
 | `search_timeout` | `45` | seconds |
@@ -344,6 +367,8 @@ Everything Crate knows (artists, album states, settings) is in `crate-data/crate
 | Crate container keeps restarting, can't open database | `crate-data` was created by Docker as root. Run `sudo chown -R $(id -u):$(id -g) crate-data`. |
 | Everything is **Not found** | Try `preferred_formats` = `flac,mp3,m4a`, lower `min_bitrate`, or a longer `search_timeout`. Rare music may simply not be shared right now. Crate retries later. |
 | No artist pictures | Not every artist has a photo on Wikidata, so Crate shows album art instead. Pictures load in your browser, so it needs internet access. |
+| Import picked the wrong artist | Change it with the dropdown on that row before adding. If you already added it, remove the artist (files are kept) and add the right one from the search. |
+| Import says *No match* | The folder name isn't an artist name MusicBrainz knows. Rename the folder (e.g. `Artist/Album`), or add the artist from the Artists search. |
 | Already-owned albums get downloaded again | Crate matches by folder name or tags. Use **I have this** on the album, or rename the folder to `Artist/Album`. Installing `mutagen` (included in Docker) improves matching. |
 
 ## Notes
@@ -363,16 +388,18 @@ crate/
   mb.py        MusicBrainz / Wikidata client
   library.py   library scan & "already have it" matching
   dupes.py     duplicate scanner
+  importer.py  import artists from your existing library
   server.py    HTTP API
   web/         single-page UI
 tests/
   mock_services.py   fake MusicBrainz + slskd
   test_e2e.py        full pipeline test
   test_dupes.py      duplicate scanner test
+  test_import.py     library import test
 ```
 
 ```bash
-python3 tests/test_e2e.py && python3 tests/test_dupes.py
+python3 tests/test_e2e.py && python3 tests/test_dupes.py && python3 tests/test_import.py
 ```
 
 No network or real slskd is needed. The tests run against fake services.
