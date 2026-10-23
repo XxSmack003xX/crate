@@ -81,18 +81,19 @@ Please **share music back.** Soulseek runs on people sharing, and many users won
 
 Use this if you don't run slskd yet. One compose file starts both, already connected to each other.
 
-**1. Get the code**
+Crate runs from a prebuilt image (`ghcr.io/xxsmack003xx/crate`, for amd64 and arm64 machines such as a Raspberry Pi), so you only need two files: the compose file and the settings file.
+
+**1. Download the compose file and settings template**
 
 ```bash
-git clone https://github.com/XxSmack003xX/crate.git
-cd crate
+mkdir crate && cd crate
+curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/XxSmack003xX/crate/main/docker-compose.yml
+curl -fsSL -o .env https://raw.githubusercontent.com/XxSmack003xX/crate/main/.env.example
 ```
 
-**2. Create your settings file**
+Or clone the repo with `git clone https://github.com/XxSmack003xX/crate.git && cd crate && cp .env.example .env`.
 
-```bash
-cp .env.example .env
-```
+**2. Fill in your settings**
 
 Open `.env` and fill in:
 
@@ -105,12 +106,13 @@ Open `.env` and fill in:
 | `SOULSEEK_USERNAME` / `SOULSEEK_PASSWORD` | Your Soulseek login |
 | `SLSKD_WEB_USERNAME` / `SLSKD_WEB_PASSWORD` | A login for slskd's own web page. Change the defaults. |
 | `MB_CONTACT` | An email or URL, which MusicBrainz asks API users to send |
+| `CRATE_VERSION` | Leave as `latest`, or pin a version like `1.1.0` |
 
 **3. Create the data folders and start**
 
 ```bash
 mkdir -p downloads crate-data slskd
-docker compose up -d --build
+docker compose up -d
 ```
 
 Creating the folders yourself first means they're owned by you and not by root.
@@ -138,14 +140,16 @@ Go to **http://localhost:9325 → Settings → Test connection & folders**. All 
 
 Use this if slskd is already running, in Docker, natively, or on another machine. You'll start only the Crate container, using `docker-compose.existing-slskd.yml`.
 
-**1. Get the code and create `.env`**
+**1. Download the compose file and settings template**
 
 ```bash
-git clone https://github.com/XxSmack003xX/crate.git
-cd crate
-cp .env.example .env
+mkdir crate && cd crate
+curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/XxSmack003xX/crate/main/docker-compose.existing-slskd.yml
+curl -fsSL -o .env https://raw.githubusercontent.com/XxSmack003xX/crate/main/.env.example
 mkdir -p crate-data
 ```
+
+The file is saved as `docker-compose.yml`, so plain `docker compose` commands work. If you cloned the repo instead, add `-f docker-compose.existing-slskd.yml` to each command.
 
 **2. Give slskd an API key**
 
@@ -193,7 +197,7 @@ Also set `MUSIC_DIR`, `PUID`/`PGID` and `MB_CONTACT` as in setup A.
 **5. Start Crate**
 
 ```bash
-docker compose -f docker-compose.existing-slskd.yml up -d --build
+docker compose up -d
 ```
 
 Open **http://localhost:9325 → Settings → Test connection & folders**. All three lines should be green. Already have a collection? Use **Artists → Import from library**.
@@ -345,13 +349,26 @@ In Docker, the published port is set by `CRATE_PORT` in `.env`. The app inside t
 
 ## Updating, logs and backups
 
-```bash
-git pull
-docker compose up -d --build                                          # setup A
-docker compose -f docker-compose.existing-slskd.yml up -d --build     # setup B
+**Update to the latest version:**
 
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Your artists, settings and database carry over, and any database changes are applied automatically when Crate starts. To stay on a specific version, set `CRATE_VERSION=1.1.0` in `.env`. To go back to a version, set it and run the same two commands. Available versions are listed on the [package page](https://github.com/XxSmack003xX/crate/pkgs/container/crate).
+
+| Image tag | What it is |
+|---|---|
+| `latest` | The newest release, or the newest code on `main` |
+| `1.1.0`, `1.1`, `1` | A specific release / the newest release in that series |
+| `main`, `sha-abc1234` | Builds of the `main` branch |
+
+```bash
 docker compose logs -f crate        # follow Crate's log
 ```
+
+Building from source instead: clone the repo, uncomment `build: .` in the compose file, and run `docker compose up -d --build`. After `git pull`, run the same command to rebuild.
 
 Everything Crate knows (artists, album states, settings) is in `crate-data/crate.db`. Back up that one file. Your music and the slskd config live in their own folders.
 

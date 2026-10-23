@@ -2,7 +2,7 @@
 #
 #   cp .env.example .env          # then edit .env
 #   mkdir -p downloads crate-data slskd
-#   docker compose up -d --build
+#   docker compose up -d
 #
 #   slskd → http://localhost:5030      Crate → http://localhost:9325 (CRATE_PORT)
 #
@@ -36,8 +36,11 @@ services:
     restart: unless-stopped
 
   crate:
-    build: .
-    image: crate:local
+    # Prebuilt image, updated with:  docker compose pull && docker compose up -d
+    # Pin a version with CRATE_VERSION in .env (e.g. 1.1.0); default is latest.
+    image: ghcr.io/xxsmack003xx/crate:${CRATE_VERSION:-latest}
+    # To build from source instead, uncomment the next line and run: docker compose up -d --build
+    # build: .
     container_name: crate
     depends_on: [slskd]
     user: "${PUID:-1000}:${PGID:-1000}"
