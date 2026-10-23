@@ -789,47 +789,74 @@ function confirmClick(b, fn, need = true) {
   }
   b.dataset.confirm = ""; fn();
 }
-let dupePoll = null;
+let dupePoll = null, dupeTab = null;
+const FMT_ORDER = ["flac", "alac", "ape", "wv", "wav", "aiff", "mp3", "m4a", "aac", "ogg", "opus", "wma"];
+const sortFmts = list => [...list].sort((a, b) => (FMT_ORDER.indexOf(a) + 100) % 100 - (FMT_ORDER.indexOf(b) + 100) % 100 || a.localeCompare(b));
+const mmss = sec => sec ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}` : "";
 async function viewDupes(first) {
   const d = await api("/api/dupes");
   clearTimeout(dupePoll);
   if (d.state === "scanning") dupePoll = setTimeout(() => { if (location.hash === "#/duplicates") viewDupes(false); }, 800);
-  if (unchanged(first, d)) return;
+  const songs = d.song_groups || [];
+  if (!dupeTab || (first && d.state === "done" && !(dupeTab === "albums" ? d.groups.length : songs.length)))
+    dupeTab = d.groups.length || !songs.length ? "albums" : "songs";
+  if (unchanged(first, [d, dupeTab])) return;
   const del = d.action === "delete";
   const scanBtn = `<button class="btn ${d.scanned_at ? "" : "primary"}" id="dscan" ${d.state === "scanning" ? "disabled" : ""}>${d.state === "scanning" ? "Scanning…" : d.scanned_at ? "Scan again" : "Scan library"}</button>`;
+  const trashNote = `<div class="dnote">${del ? "<b>Removed files are deleted permanently.</b> You can switch to a trash folder in Settings." :
+        `Removed files go to <span class="mono">${esc(d.trash.path)}</span> so you can restore them.`}
+        ${d.trash.size ? ` Trash holds ${fmtBytes(d.trash.size)}. <button class="btn sm ghost danger" id="dempty">Empty trash</button>` : ""}</div>`;
   let body = "";
   if (d.state === "scanning") {
-    body = `<div class="blank"><div class="big" style="display:flex;gap:10px;align-items:center;justify-content:center"><span class="pulse"></span>Scanning your library…</div>${d.folders_scanned} album folders checked so far</div>`;
+    body = `<div class="blank"><div class="big" style="display:flex;gap:10px;align-items:center;justify-content:center"><span class="pulse"></span>Scanning your library…</div>${d.folders_scanned} album folders${d.files_scanned ? ` · ${d.files_scanned} songs` : ""} checked so far</div>`;
   } else if (d.state === "error") {
     body = `<div class="banner bad">${esc(d.error)}</div>`;
   } else if (!d.scanned_at) {
-    body = `<div class="blank"><div class="big">Find albums you have more than once</div>
-      Crate looks through your music library for the same album in two or more folders, and for folders holding both FLAC and MP3 copies of the tracks.<br>Nothing is removed until you choose.</div>`;
-  } else if (!d.groups.length) {
-    body = `<div class="blank"><div class="big">No duplicates</div>${d.folders_scanned} album folders checked ${ago(d.scanned_at)}.</div>`;
+    body = `<div class="blank"><div class="big">Find music you have more than once</div>
+      Crate looks through your music library for <b>albums</b> in two or more folders or saved as both FLAC and MP3,
+      and for <b>songs</b> you have several copies of, like <span class="mono">Song.mp3</span> and <span class="mono">Song (1).mp3</span>, or the same track on an album and as a single.<br>Nothing is removed until you choose.</div>`;
+  } else if (!d.groups.length && !songs.length) {
+    body = `<div class="blank"><div class="big">No duplicates</div>${d.folders_scanned} album folders and ${d.files_scanned} songs checked ${ago(d.scanned_at)}.</div>${d.trash.size ? trashNote : ""}`;
   } else {
-    const fmts = new Set();
-    d.groups.forEach(g => g.copies.forEach(c => { if (g.type === "copies") fmts.add(c.main); else c.mixed_formats.forEach(f => fmts.add(f)); }));
-    const order = ["flac", "alac", "ape", "wv", "wav", "mp3", "m4a", "aac", "ogg", "opus"];
-    const fmtList = [...fmts].sort((a, b) => (order.indexOf(a) + 100) % 100 - (order.indexOf(b) + 100) % 100 || a.localeCompare(b));
-    body = `<div class="dsum">
-        <div><div class="big">${d.groups.length} duplicate${d.groups.length === 1 ? "" : "s"}</div>
-          <div class="sub" style="font-size:13px">Removing the extra copies frees about ${fmtBytes(d.savings)}</div></div>
-        <div class="bulk">
-          ${fmtList.map(f => `<button class="btn" data-bulk="keep_format" data-fmt="${esc(f)}" title="Everywhere there's a ${esc(f.toUpperCase())} copy, keep the best one and remove the others. Albums without a ${esc(f.toUpperCase())} copy are left alone.">Keep ${esc(f.toUpperCase())} everywhere</button>`).join("")}
-          <button class="btn primary" data-bulk="suggested" title="Keep the suggested copy of every album (highlighted in green).">Apply all suggestions</button>
-        </div>
-      </div>
-      <div class="dnote">${del ? "<b>Removed files are deleted permanently.</b> You can switch to a trash folder in Settings." :
-        `Removed files go to <span class="mono">${esc(d.trash.path)}</span> so you can restore them.`}
-        ${d.trash.size ? ` Trash holds ${fmtBytes(d.trash.size)}. <button class="btn sm ghost danger" id="dempty">Empty trash</button>` : ""}</div>
-      ${d.groups.map(dupeGroup).join("")}`;
+    body = `<div class="tabs">
+        <button data-dtab="albums" class="${dupeTab === "albums" ? "on" : ""}">Albums<span class="n">${d.groups.length}</span></button>
+        <button data-dtab="songs" class="${dupeTab === "songs" ? "on" : ""}">Songs<span class="n">${songs.length}</span></button></div>`;
+    if (dupeTab === "albums") {
+      if (!d.groups.length) body += `<div class="list"><div class="empty">No duplicate albums.</div></div>${trashNote}`;
+      else {
+        const fmts = new Set();
+        d.groups.forEach(g => g.copies.forEach(c => { if (g.type === "copies") fmts.add(c.main); else c.mixed_formats.forEach(f => fmts.add(f)); }));
+        body += `<div class="dsum">
+            <div><div class="big">${d.groups.length} duplicate album${d.groups.length === 1 ? "" : "s"}</div>
+              <div class="sub" style="font-size:13px">Removing the extra copies frees about ${fmtBytes(d.savings)}</div></div>
+            <div class="bulk">
+              ${sortFmts(fmts).map(f => `<button class="btn" data-bulk="keep_format" data-fmt="${esc(f)}" title="Everywhere there's a ${esc(f.toUpperCase())} copy, keep the best one and remove the others. Albums without a ${esc(f.toUpperCase())} copy are left alone.">Keep ${esc(f.toUpperCase())} everywhere</button>`).join("")}
+              <button class="btn primary" data-bulk="suggested" title="Keep the suggested copy of every album (highlighted in green).">Apply all suggestions</button>
+            </div></div>${trashNote}${d.groups.map(dupeGroup).join("")}`;
+      }
+    } else {
+      if (!songs.length) body += `<div class="list"><div class="empty">No duplicate songs.</div></div>${trashNote}`;
+      else {
+        const fmts = new Set(); songs.forEach(g => g.songs.forEach(x => fmts.add(x.ext)));
+        const copies = songs.reduce((n, g) => n + g.songs.length - 1, 0);
+        body += `<div class="dsum">
+            <div><div class="big">${songs.length} duplicate song${songs.length === 1 ? "" : "s"}</div>
+              <div class="sub" style="font-size:13px">${copies} extra cop${copies === 1 ? "y" : "ies"} · removing them frees about ${fmtBytes(d.song_savings)}</div></div>
+            <div class="bulk">
+              ${fmts.size > 1 ? sortFmts(fmts).map(f => `<button class="btn" data-sbulk="songs_keep_format" data-fmt="${esc(f)}" title="For every song that has a ${esc(f.toUpperCase())} copy, keep the best one and remove the rest. Songs without a ${esc(f.toUpperCase())} copy are left alone.">Keep ${esc(f.toUpperCase())} everywhere</button>`).join("") : ""}
+              <button class="btn primary" data-sbulk="songs_suggested" title="Keep the suggested copy of every song (highlighted in green) and remove all the other copies.">Remove all duplicates</button>
+            </div></div>${trashNote}
+          <div class="dnote">Songs match by artist and title. Live, remix and other differently-titled versions are kept apart, and so are versions with very different lengths when tags are available. Remastered copies count as the same song. Songs from duplicate albums are on the Albums tab.</div>
+          ${songs.map(songGroup).join("")}`;
+      }
+    }
   }
   view.innerHTML = `<div class="toolbar"><h1 class="grow">Duplicates</h1>${scanBtn}</div>
-    <div class="sub" style="margin-top:4px">${d.scanned_at && d.state !== "scanning" ? `Last scan ${ago(d.scanned_at)} · ${d.folders_scanned} album folders` : "Scans the music library folder set in Settings."}</div>
+    <div class="sub" style="margin-top:4px">${d.scanned_at && d.state !== "scanning" ? `Last scan ${ago(d.scanned_at)} · ${d.folders_scanned} album folders · ${d.files_scanned} songs` : "Scans the music library folder set in Settings."}</div>
     ${body}`;
 
   $("#dscan").onclick = async () => { await api("/api/dupes/scan", { method: "POST" }); viewDupes(true); };
+  view.querySelectorAll("[data-dtab]").forEach(b => b.onclick = () => { dupeTab = b.dataset.dtab; viewDupes(true); });
   const empty = $("#dempty");
   if (empty) empty.onclick = () => confirmClick(empty, async () => {
     const r = await api("/api/dupes/trash/empty", { method: "POST" }); toast(`Emptied trash · freed ${fmtBytes(r.emptied.size)}`); viewDupes(true);
@@ -849,6 +876,28 @@ async function viewDupes(first) {
     run(b, { group: b.dataset.group, remove_format: b.dataset.rmfmt }, () => `Removed ${b.dataset.rmfmt.toUpperCase()} files`), del));
   view.querySelectorAll("[data-bulk]").forEach(b => b.onclick = () => confirmClick(b, () =>
     run(b, { all: b.dataset.bulk, format: b.dataset.fmt }, x => `Cleaned up ${x.groups} album${x.groups === 1 ? "" : "s"}`)));
+  view.querySelectorAll("[data-skeep]").forEach(b => b.onclick = () => confirmClick(b, () =>
+    run(b, { song_group: b.dataset.group, keep: b.dataset.skeep }, x => `Kept one copy, removed ${x.files}`), del));
+  view.querySelectorAll("[data-srm]").forEach(b => b.onclick = () => confirmClick(b, () =>
+    run(b, { song_group: b.dataset.group, remove: b.dataset.srm }, () => "Removed 1 copy"), del));
+  view.querySelectorAll("[data-sbulk]").forEach(b => b.onclick = () => confirmClick(b, () =>
+    run(b, { all: b.dataset.sbulk, format: b.dataset.fmt }, x => `Removed ${x.files} duplicate song file${x.files === 1 ? "" : "s"}`)));
+}
+function songGroup(g) {
+  return `<div class="dgroup"><div class="hd"><span class="t">${esc(g.artist)} — ${esc(g.title)}</span>
+      <span class="k">${g.songs.length} copies</span>${g.savings ? `<span class="save">frees ${fmtBytes(g.savings)}</span>` : ""}</div>
+    ${g.songs.map(x => {
+      const sugg = x.id === g.suggest_keep;
+      const where = x.unit_tracks > 1 ? `on ${esc(x.album || x.unit_rel)} (${x.unit_tracks} tracks)` : `in ${esc(x.unit_rel)}`;
+      const bits = [mmss(x.duration), fmtBytes(x.size)].filter(Boolean).join(" · ");
+      return `<div class="dcopy ${sugg ? "sugg" : ""}">${fmtBadge(x.ext, x)}
+        <div class="info"><span>${bits} · ${where}</span>
+          <span class="tags">${sugg ? `<span class="tag good">Suggested keep</span>` : ""}${x.copy_marked ? `<span class="tag warn">Copy</span>` : ""}</span>
+          <span class="mono" title="${esc(x.rel)}">${esc(x.rel)}</span></div>
+        <div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="btn sm ghost danger" data-group="${g.id}" data-srm="${x.id}">Remove</button>
+          <button class="btn sm ${sugg ? "primary" : ""}" data-group="${g.id}" data-skeep="${x.id}">Keep only this</button></div></div>`;
+    }).join("")}</div>`;
 }
 function dupeGroup(g) {
   const head = `<div class="hd"><span class="t">${esc(g.artist)} — ${esc(g.album)}</span>

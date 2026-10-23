@@ -10,6 +10,7 @@ Removed files go to <library>/.crate-trash/<timestamp>/ (or are deleted, if the
 "dupes_action" setting is "delete"). Nothing outside the library is touched.
 """
 import os
+import re
 import shutil
 import threading
 from datetime import datetime
@@ -24,6 +25,17 @@ except Exception:  # pragma: no cover
     mutagen = None
 
 TRASH_DIR = ".crate-trash"
+
+# "01 - Song", "1-02 Song", "01. Song", "01_Song", "Disc 1 - 03 Song"
+TRACKNO_RE = re.compile(r"^\s*(?:(?:cd|disc|disk)\s*\d+\s*[-_. ]\s*)?\d{1,3}(?:[-_.]\d{1,3})?(?:\s*[-_.)]\s*|\s+)", re.I)
+# "Song (1)", "Song copy", "Song - Copy (2)"
+COPY_RE = re.compile(r"(?:\s*[-_]?\s*(?:\(\d{1,2}\)|\[\d{1,2}\]|copy(?:\s*\d+)?|\(copy(?:\s*\d+)?\)))+\s*$", re.I)
+# "(Remastered 2011)", "[2009 Remaster]", "- Remastered" — same recording
+REMASTER_RE = re.compile(r"\s*(?:[\(\[][^\)\]]*remaster[^\)\]]*[\)\]]|-\s*(?:\d{4}\s*)?remaster(?:ed)?(?:\s*\d{4})?(?:\s*version)?)", re.I)
+# Titles that many different songs share (an "Intro" on every album isn't a duplicate).
+GENERIC_RE = re.compile(r"^(?:intro|outro|interlude|untitled|skit|hidden track|bonus track|silence|prelude|"
+                        r"reprise|instrumental|demo|track|audio track|piste|pista)(?: \d{1,3})?$")
+VARIOUS = {"various artists", "various", "va", "v a", "unknown artist", "unknown", "compilations", "soundtrack"}
 
 
 class DupeError(Exception):
@@ -43,6 +55,50 @@ def _bitrate(path):
         return int(br // 1000) if br else None
     except Exception:
         return None
+
+
+def _song_info(path):
+    """(artist, title, length_seconds, bitrate_kbps) from tags; any may be None."""
+    if mutagen is None:
+        return None, None, None, None
+    try:
+        f = mutagen.File(path, easy=True)
+    except Exception:
+        return None, None, None, None
+    if f is None:
+        return None, None, None, None
+    info = getattr(f, "info", None)
+    length = getattr(info, "length", None)
+    br = getattr(info, "bitrate", 0)
+    tags = f.tags or {}
+    try:
+        artist = (tags.get("artist") or tags.get("albumartist") or [None])[0]
+        title = (tags.get("title") or [None])[0]
+    except Exception:
+        artist = title = None
+    return artist, title, (round(length) if length else None), (int(br // 1000) if br else None)
+
+
+def song_from_filename(filename, folder_artist=""):
+    """Parse '03 - Artist - Song (1).mp3' into (artist or None, title, copy_marked)."""
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    stem = stem.replace("_", " ").strip()
+    marked = bool(COPY_RE.search(stem))
+    stem = COPY_RE.sub("", stem).strip()
+    stem = TRACKNO_RE.sub("", stem, count=1).strip() or stem
+    artist = None
+    if " - " in stem:
+        head, tail = stem.split(" - ", 1)
+        fa = normalize(folder_artist)
+        if fa and normalize(head) in (fa, fa[4:] if fa.startswith("the ") else fa):
+            stem = tail
+        elif not fa or fa in VARIOUS:
+            artist, stem = head, tail
+    return artist, stem.strip(), marked
+
+
+def song_key(title):
+    return normalize(COPY_RE.sub("", REMASTER_RE.sub("", title or "")))
 
 
 def _dir_size(path):
@@ -66,6 +122,9 @@ class DupeScanner:
         self.scanned_at = None
         self.groups = {}             # gid -> group
         self.copies = {}             # cid -> copy (with private file lists)
+        self.song_groups = {}        # sgid -> group of duplicate songs
+        self.songs = {}              # sid -> one song file
+        self.files_scanned = 0
 
     # ------------------------------------------------------------------ paths
     def root(self):
@@ -85,7 +144,7 @@ class DupeScanner:
         with self.lock:
             if self.state == "scanning":
                 return False
-            self.state, self.error, self.folders_scanned = "scanning", None, 0
+            self.state, self.error, self.folders_scanned, self.files_scanned = "scanning", None, 0, 0
         threading.Thread(target=self._scan_safe, daemon=True, name="dupe-scan").start()
         return True
 
@@ -94,9 +153,9 @@ class DupeScanner:
             self._scan()
             with self.lock:
                 self.state, self.scanned_at = "done", now_iso()
-            n = len(self.groups)
-            self.app.db.event(f"Duplicate scan: {n} duplicate album(s) found" if n else
-                              "Duplicate scan: no duplicates found")
+            n, ns = len(self.groups), len(self.song_groups)
+            self.app.db.event(f"Duplicate scan: {n} duplicate album(s) and {ns} duplicate song(s) found"
+                              if n or ns else "Duplicate scan: no duplicates found")
         except Exception as e:  # pragma: no cover
             with self.lock:
                 self.state, self.error = "error", str(e)
@@ -192,9 +251,100 @@ class DupeScanner:
         for g in groups.values():
             self._suggest(g, copies)
 
+        songs, song_groups = self._scan_songs(root, units, copies, groups, prefs)
         with self.lock:
             self.copies = copies
             self.groups = groups
+            self.songs = songs
+            self.song_groups = song_groups
+
+    # ------------------------------------------------------------------ songs
+    def _scan_songs(self, root, units, copies, groups, prefs):
+        """Group individual tracks that are the same song (artist + title, similar length)."""
+        def fmt_rank(ext):
+            return prefs.index(ext) if ext in prefs else len(prefs) + (0 if ext in LOSSLESS else 1)
+
+        # Which album-level group (if any) each album folder belongs to, so songs that an
+        # album duplicate already covers aren't listed twice.
+        unit_album_group, mixed_units = {}, set()
+        for g in groups.values():
+            for cid in g["copies"]:
+                if g["type"] == "copies":
+                    unit_album_group[copies[cid]["path"]] = g["id"]
+                else:
+                    mixed_units.add(copies[cid]["path"])
+
+        songs, by_key = {}, {}
+        for unit, files in units.items():
+            parts = os.path.relpath(unit, root).split(os.sep)
+            folder_artist, album = guess_artist_album(parts)
+            for p, ext, size in files:
+                self.files_scanned += 1
+                ta, tt, length, br = _song_info(p)
+                fa, ft, marked = song_from_filename(os.path.basename(p), folder_artist)
+                artist = ta or fa or folder_artist
+                title = tt or ft
+                ka = normalize(artist)
+                ka = ka[4:] if ka.startswith("the ") else ka
+                kt = song_key(title)
+                if not ka or not kt or ka in VARIOUS or GENERIC_RE.match(kt) or kt.isdigit():
+                    continue
+                sid = f"s{len(songs) + 1}"
+                songs[sid] = {
+                    "id": sid, "path": p, "rel": os.path.relpath(p, root), "unit": unit,
+                    "unit_rel": os.path.relpath(unit, root), "album": album, "artist": artist, "title": title,
+                    "ext": ext, "size": size, "lossless": ext in LOSSLESS, "duration": length,
+                    "bitrate": None if ext in LOSSLESS else br, "copy_marked": marked,
+                    "unit_tracks": len(files), "rank": fmt_rank(ext),
+                }
+                by_key.setdefault((ka, kt), []).append(sid)
+
+        song_groups = {}
+        for key, sids in sorted(by_key.items()):
+            if len(sids) < 2:
+                continue
+            # Split by length when we know it: a 3:10 studio take and a 7:45 live
+            # version with the same title are different recordings.
+            clusters, timed = [], sorted((s for s in sids if songs[s]["duration"]), key=lambda s: songs[s]["duration"])
+            for s in timed:
+                if clusters and songs[s]["duration"] - songs[clusters[-1][-1]]["duration"] <= 8:
+                    clusters[-1].append(s)
+                else:
+                    clusters.append([s])
+            untimed = [s for s in sids if not songs[s]["duration"]]
+            if clusters:
+                clusters.sort(key=len, reverse=True)
+                clusters[0].extend(untimed)
+            else:
+                clusters = [untimed]
+            for cl in clusters:
+                if len(cl) < 2:
+                    continue
+                us = {songs[s]["unit"] for s in cl}
+                # Already handled on the Albums tab?
+                if len(us) >= 2 and len({unit_album_group.get(u) for u in us}) == 1 and unit_album_group.get(next(iter(us))):
+                    continue
+                if len(us) == 1 and next(iter(us)) in mixed_units and len({songs[s]["ext"] for s in cl}) == len(cl):
+                    continue
+                gid = f"sg{len(song_groups) + 1}"
+                # Name the group by its plainest title ("Big Tune", not "Big Tune (Remastered 2019)").
+                first = min((songs[x] for x in cl), key=lambda x: (x["copy_marked"], len(x["title"] or "")))
+                g = {"id": gid, "artist": first["artist"], "title": first["title"], "songs": cl}
+                self._suggest_song(g, songs)
+                song_groups[gid] = g
+        return songs, song_groups
+
+    @staticmethod
+    def _suggest_song(g, songs):
+        def score(sid):
+            s = songs[sid]
+            return (s["copy_marked"],          # "Song (1).mp3" is the copy
+                    s["rank"],                  # preferred format
+                    -(s["bitrate"] or 0),       # higher bitrate
+                    -s["unit_tracks"],          # the copy inside a full album over a loose single
+                    -s["size"])
+        g["suggest_keep"] = sorted(g["songs"], key=score)[0]
+        g["savings"] = sum(songs[s]["size"] for s in g["songs"] if s != g["suggest_keep"])
 
     def _suggest(self, g, copies):
         if g["type"] == "copies":
@@ -227,11 +377,25 @@ class DupeScanner:
                 out["copies"] = [self._public(self.copies[c]) for c in g["copies"] if c in self.copies]
                 groups.append(out)
             groups.sort(key=lambda g: (normalize(g["artist"]), normalize(g["album"]), g["type"]))
+            song_groups = []
+            for g in self.song_groups.values():
+                out = dict(g)
+                out["songs"] = [self._public_song(self.songs[s]) for s in g["songs"] if s in self.songs]
+                song_groups.append(out)
+            song_groups.sort(key=lambda g: (normalize(g["artist"]), normalize(g["title"])))
             return {"state": self.state, "error": self.error, "folders_scanned": self.folders_scanned,
+                    "files_scanned": self.files_scanned,
                     "scanned_at": self.scanned_at, "groups": groups,
                     "savings": sum(g.get("savings", 0) for g in groups),
+                    "song_groups": song_groups,
+                    "song_savings": sum(g.get("savings", 0) for g in song_groups),
                     "action": (self.app.settings.raw().get("dupes_action") or "trash"),
                     "trash": self.trash_info()}
+
+    @staticmethod
+    def _public_song(s):
+        return {k: s[k] for k in ("id", "rel", "unit_rel", "album", "title", "ext", "size", "lossless",
+                                  "duration", "bitrate", "copy_marked", "unit_tracks")}
 
     @staticmethod
     def _public(c):
@@ -256,7 +420,44 @@ class DupeScanner:
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
             result = {"folders": 0, "files": 0, "bytes": 0, "groups": 0, "skipped": 0}
             mode = body.get("all")
-            if mode:
+            if mode in ("songs_suggested", "songs_keep_format"):
+                fmt = (body.get("format") or "").lower()
+                if mode == "songs_keep_format" and not fmt:
+                    raise DupeError("format required")
+                for g in list(self.song_groups.values()):
+                    if g["id"] not in self.song_groups:
+                        continue
+                    keep = g["suggest_keep"]
+                    if mode == "songs_keep_format":
+                        mine = [s for s in g["songs"] if self.songs[s]["ext"] == fmt]
+                        if not mine:
+                            result["skipped"] += 1
+                            continue
+                        keep = sorted(mine, key=lambda s: (self.songs[s]["copy_marked"], -(self.songs[s]["bitrate"] or 0),
+                                                           -self.songs[s]["unit_tracks"], -self.songs[s]["size"]))[0]
+                    try:
+                        self._song_keep(g, keep, stamp, result)
+                        result["groups"] += 1
+                    except DupeError:
+                        result["skipped"] += 1
+            elif body.get("song_group"):
+                g = self.song_groups.get(body["song_group"])
+                if not g:
+                    raise DupeError("That duplicate is gone — rescan to refresh the list")
+                if body.get("keep"):
+                    if body["keep"] not in g["songs"]:
+                        raise DupeError("Pick one of this song's copies to keep")
+                    self._song_keep(g, body["keep"], stamp, result)
+                elif body.get("remove"):
+                    if body["remove"] not in g["songs"]:
+                        raise DupeError("That copy isn't part of this song")
+                    if len(g["songs"]) < 2:
+                        raise DupeError("That's the last copy of this song")
+                    self._song_remove(g, body["remove"], stamp, result)
+                else:
+                    raise DupeError("Nothing to do")
+                result["groups"] = 1
+            elif mode:
                 fmt = (body.get("format") or "").lower()
                 if mode == "keep_format" and not fmt:
                     raise DupeError("format required")
@@ -314,6 +515,29 @@ class DupeScanner:
                 f"Duplicates: {verb.lower()} {result['folders']} folder(s) and {result['files']} file(s) "
                 f"({result['bytes'] / 1e9:.2f} GB) across {result['groups']} album(s)", "success")
         return result
+
+    def _song_remove(self, g, sid, stamp, result):
+        s = self.songs[sid]
+        if os.path.exists(s["path"]):
+            result["bytes"] += os.path.getsize(s["path"])
+            self._dispose(s["path"], stamp)
+            result["files"] += 1
+            self._prune(os.path.dirname(s["path"]))
+        self.songs.pop(sid, None)
+        g["songs"] = [x for x in g["songs"] if x != sid]
+        if len(g["songs"]) < 2:
+            self.song_groups.pop(g["id"], None)
+        else:
+            self._suggest_song(g, self.songs)
+
+    def _song_keep(self, g, keep_sid, stamp, result):
+        if not os.path.exists(self.songs[keep_sid]["path"]):
+            raise DupeError(f"{self.songs[keep_sid]['rel']} no longer exists — rescan first")
+        for sid in [x for x in g["songs"] if x != keep_sid]:
+            if g["id"] not in self.song_groups:
+                break
+            self._song_remove(g, sid, stamp, result)
+        self.song_groups.pop(g["id"], None)
 
     def _action(self):
         return "delete" if (self.app.settings.raw().get("dupes_action") or "trash") == "delete" else "trash"

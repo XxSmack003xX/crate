@@ -307,7 +307,7 @@ def rescan(app, h, m, body):
 # ----------------------------------------------------------------- handler
 def make_handler(app):
     class Handler(BaseHTTPRequestHandler):
-        server_version = "Crate/1.1"
+        server_version = "Crate/1.2"
 
         def log_message(self, fmt, *args):  # quiet
             pass

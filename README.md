@@ -45,7 +45,7 @@ Add an artist and Crate pulls their full list of releases from MusicBrainz. It c
 - **Tidy library.** Finished albums are moved to `Artist/Album (Year)/`, with multi-disc albums kept in their `CD1`/`CD2` folders and the cover image included. You can change the folder layout.
 - **Keeps up to date.** Artists are re-checked every 24 hours for new releases. Albums that weren't found are retried later, waiting longer each time.
 - **Gentle on Soulseek.** Crate only searches while slskd is logged in, leaves a gap of at least 8 seconds between searches, and backs off if a search is rejected. **Clear slskd searches** tidies slskd's search list.
-- **Duplicate scanner.** Finds albums you have more than once, either in separate folders or as FLAC and MP3 copies in one folder. You keep one copy, or remove one format. Removed files go to a trash folder you can restore from.
+- **Duplicate scanner.** Finds albums you have more than once, either in separate folders or as FLAC and MP3 copies in one folder, and duplicate songs, like `Song (1).mp3` or the same track on an album and as a single. Remove any copy, keep one, or clean up everything in one click. Removed files go to a trash folder you can restore from.
 - **Lightweight.** Plain Python with no required packages. State lives in a single SQLite file, and there's one small web UI on port **9325**.
 
 ## How it works
@@ -246,7 +246,7 @@ To run it in the background on Linux, wrap it in a systemd service, or just use 
 | **Missing albums** | Albums by artists you follow that you don't have and that aren't set to download, grouped by artist. **Download** one, **Download all** for an artist, **Download all** overall, or **Skip**. |
 | **Artist page** | Tabs for Albums, EPs, Singles and Other. **Download all missing**, **Refresh discography**, and per-release **Download**, **Skip**, **Search again**, **Try another source** and **I have this** (re-checks your library for that album). |
 | **Queue** | Everything searching or downloading, with live progress, plus what's waiting or not found. **Clear slskd searches** deletes finished searches from slskd's Searches page; running searches are kept. |
-| **Duplicates** | Find and clean up albums you have more than once. See [Duplicate scanner](#duplicate-scanner). |
+| **Duplicates** | Find and clean up albums and songs you have more than once, on the **Albums** and **Songs** tabs. See [Duplicate scanner](#duplicate-scanner). |
 | **Activity** | A log of everything Crate did and why: which source it picked, which ones failed, what was imported, connection problems. |
 | **Settings** | Connection, folders, release types, formats and bitrate, how many searches and downloads run at once, timeouts, and what happens to removed duplicates. |
 
@@ -306,7 +306,9 @@ Folders that pass are ranked by format (in your order of preference), how well t
 
 ![Duplicates page](docs/screenshots/duplicates.png)
 
-**Duplicates → Scan library** finds two kinds of duplicate:
+**Duplicates → Scan library** checks your whole library for duplicate albums and duplicate songs. Nothing is removed until you choose.
+
+### Albums tab
 
 - **The same album in two or more folders,** e.g. `Morning Light (2015) [FLAC]` and `Morning Light`. Click **Keep this, remove other** on the copy you want.
 - **One folder holding both FLAC and MP3 copies of the tracks.** Click **Remove MP3 files** or **Remove FLAC files**.
@@ -314,6 +316,25 @@ Folders that pass are ranked by format (in your order of preference), how well t
 There are also bulk buttons: **Keep FLAC everywhere**, **Keep MP3 everywhere** and **Apply all suggestions**. Albums without a copy in the chosen format are left alone. The suggested copy, highlighted in green, is always a complete one, then the format you rank first in Settings, then the higher bitrate.
 
 Albums are matched by artist and title, ignoring years, `[FLAC]`-style tags and bracketed extras. That means `Album` and `Album (Deluxe Edition)` count as the same album, so check the list before using a bulk button. Removed files go to `<library>/.crate-trash/` so you can restore them, until you click **Empty trash**. You can switch to permanent deletion in Settings. If a removed copy was one Crate downloaded, Crate's record of that album points at the copy you kept.
+
+### Songs tab
+
+![Duplicate songs](docs/screenshots/duplicate-songs.png)
+
+Finds individual tracks you have more than once:
+
+- **Copies in the same folder,** like `04 Closer.mp3` and `04 Closer (1).mp3`, or `Song - Copy.mp3`
+- **The same song in different places,** like an album track, the same song as a loose single, and on a *Various Artists* compilation (`05 Artist - Song.mp3`)
+- **Remastered copies,** like `Big Tune` and `Big Tune (Remastered 2019)`
+
+For each song you can **Remove** any copy, or **Keep only this** to remove all the others. To clean up everything at once, use **Remove all duplicates**, which keeps the suggested copy of every song, or **Keep FLAC everywhere** / **Keep MP3 everywhere**.
+
+The suggested copy, highlighted in green, is the original over a `(1)` copy, then your preferred format, then the higher bitrate, then the copy that's part of a full album over a loose single.
+
+Songs are matched by artist and title, read from tags when `mutagen` is installed (it is in Docker), otherwise from filenames. To avoid false matches:
+- **Different versions stay separate:** *Song (Live)*, *Song (Remix)* and other differently-titled versions are never merged. With tags, versions of very different length (more than 8 seconds apart) are also kept apart.
+- **Generic titles are ignored:** an *Intro*, *Outro*, *Interlude* or *Track 01* on different albums isn't treated as a duplicate.
+- **No double listing:** songs from albums already listed on the Albums tab aren't repeated here.
 
 ## Configuration reference
 
@@ -413,10 +434,11 @@ tests/
   test_e2e.py        full pipeline test
   test_dupes.py      duplicate scanner test
   test_import.py     library import test
+  test_song_dupes.py duplicate songs test
 ```
 
 ```bash
-python3 tests/test_e2e.py && python3 tests/test_dupes.py && python3 tests/test_import.py
+python3 tests/test_e2e.py && python3 tests/test_dupes.py && python3 tests/test_import.py && python3 tests/test_song_dupes.py
 ```
 
 No network or real slskd is needed. The tests run against fake services.
