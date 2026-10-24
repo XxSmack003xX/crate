@@ -5,6 +5,7 @@ single-user self-hosted app with a handful of threads.
 """
 import json
 import os
+import re
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -128,6 +129,7 @@ DEFAULTS = {
 }
 
 SECRET_KEYS = {"slskd_api_key"}
+_WRITE_RE = re.compile(r"^\s*(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|UPDATE|DELETE\s+FROM)\s+(\w+)", re.I)
 
 
 def now_iso():
@@ -148,6 +150,7 @@ class DB:
         d = os.path.dirname(os.path.abspath(path))
         os.makedirs(d, exist_ok=True)
         self.lock = threading.RLock()
+        self.versions = {}
         self.conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
         self.conn.row_factory = sqlite3.Row
         with self.lock:
@@ -163,10 +166,25 @@ class DB:
                 self.conn.execute("ALTER TABLE artists ADD COLUMN auto_download INTEGER")
             if "added_by" not in cols:  # 1.3: who followed this artist
                 self.conn.execute("ALTER TABLE artists ADD COLUMN added_by TEXT")
+            # 1.4: per-artist rules. NULL = use the global setting.
+            for col, typ in (("followed", "INTEGER DEFAULT 1"),       # 0 = only one-off album requests
+                             ("monitor", "TEXT DEFAULT 'all'"),         # 'all' | 'new' (released after monitor_since)
+                             ("monitor_since", "TEXT"),
+                             ("release_types", "TEXT"),                 # e.g. "album,ep,single"
+                             ("include_secondary", "INTEGER")):         # 1 = also live, compilations, remixes…
+                if col not in cols:
+                    self.conn.execute(f"ALTER TABLE artists ADD COLUMN {col} {typ}")
             acols = {r[1] for r in self.conn.execute("PRAGMA table_info(albums)")}
             if "requested_by" not in acols:  # 1.3: who asked for this download (daily limits)
                 self.conn.execute("ALTER TABLE albums ADD COLUMN requested_by TEXT")
                 self.conn.execute("ALTER TABLE albums ADD COLUMN requested_at TEXT")
+            if "skip_reason" not in acols:  # 1.4: why it's skipped: type | before_follow | user
+                self.conn.execute("ALTER TABLE albums ADD COLUMN skip_reason TEXT")
+                self.conn.execute("UPDATE albums SET skip_reason = 'type' WHERE status = 'skipped' "
+                                  "AND status_detail LIKE '%not a release type you follow%'")
+                self.conn.execute("UPDATE albums SET skip_reason = 'user' WHERE status = 'skipped' "
+                                  "AND skip_reason IS NULL")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_albums_artist_status ON albums(artist_id, status)")
             ecols = {r[1] for r in self.conn.execute("PRAGMA table_info(events)")}
             if "username" not in ecols:  # 1.3: who did it
                 self.conn.execute("ALTER TABLE events ADD COLUMN username TEXT")
@@ -183,7 +201,15 @@ class DB:
     def x(self, sql, args=()):
         with self.lock:
             cur = self.conn.execute(sql, args)
+            m = _WRITE_RE.match(sql)
+            if m:
+                t = m.group(1).lower()
+                self.versions[t] = self.versions.get(t, 0) + 1
             return cur.lastrowid
+
+    def version(self, *tables):
+        """Changes whenever any of these tables is written (for HTTP ETags)."""
+        return "-".join(str(self.versions.get(t, 0)) for t in tables)
 
     def update_album(self, album_id, **fields):
         fields["updated_at"] = now_iso()

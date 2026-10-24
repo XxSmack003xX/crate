@@ -126,7 +126,8 @@ check(r["result"]["added"] == 2, f"two artists added ({r['result']})")
 check(wait(lambda: not api("GET", "/api/import")["adding"] and all(
     a["sync_status"] == "ok" for a in api("GET", "/api/artists"))), "discographies fetched")
 arts = {a["name"]: a for a in api("GET", "/api/artists")}
-check(arts.get("Night Owls", {}).get("local_name") == "NightOwls", "folder name remembered for the artist")
+owl = api("GET", f"/api/artists/{arts['Night Owls']['id']}")["artist"] if "Night Owls" in arts else {}
+check(owl.get("local_name") == "NightOwls", "folder name remembered for the artist")
 
 
 def albums(name):

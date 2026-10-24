@@ -3,6 +3,7 @@ import json
 import os
 import re
 import threading
+import time
 import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,14 +23,19 @@ ROUTES = []
 ACCESS = ("public", "user", "artists", "downloads", "admin")
 
 
-def route(method, pattern, access="admin"):
+BOOT = f"{os.getpid()}{int(time.time())}"
+
+
+def route(method, pattern, access="admin", cache=None):
     """Register an API route. Routes are admin-only unless they say otherwise:
     public (no login), user (any signed-in account), artists / downloads (users
-    with that permission), admin."""
+    with that permission), admin.
+    `cache`: tables the response depends on. The response then carries an ETag
+    and an unchanged refresh is answered with 304 without running the handler."""
     assert access in ACCESS
 
     def deco(fn):
-        ROUTES.append((method, re.compile("^" + pattern + "$"), fn, access))
+        ROUTES.append((method, re.compile("^" + pattern + "$"), fn, access, cache))
         return fn
     return deco
 
@@ -40,16 +46,49 @@ class HTTPError(Exception):
         self.code = code
 
 
-def _artist_rows(app, where="", args=()):
-    return app.db.q(f"""
-        SELECT ar.*,
-          (SELECT COUNT(*) FROM albums WHERE artist_id = ar.id AND status != 'skipped') AS total,
-          (SELECT COUNT(*) FROM albums WHERE artist_id = ar.id AND status = 'have') AS have,
-          (SELECT COUNT(*) FROM albums WHERE artist_id = ar.id AND status IN ('searching','queued','downloading','importing')) AS active,
-          (SELECT COUNT(*) FROM albums WHERE artist_id = ar.id AND status IN ('wanted','not_found','failed','missing')) AS missing,
-          (SELECT mbid FROM albums WHERE artist_id = ar.id AND primary_type = 'Album' AND status != 'skipped'
-              ORDER BY (status = 'have') DESC, release_date DESC LIMIT 1) AS cover_mbid
-        FROM artists ar {where} ORDER BY COALESCE(ar.sort_name, ar.name) COLLATE NOCASE""", args)
+ARTIST_COLS = ("id, mbid, name, sort_name, disambiguation, country, added_at, last_synced, sync_status, image, "
+               "added_by, auto_download, followed, monitor, monitor_since, release_types, include_secondary, local_name")
+GRID_COLS = ("id", "name", "sort_name", "image", "sync_status", "added_at", "cover_mbid",
+             "total", "have", "active", "missing")
+_grid_cache = {"key": None, "rows": None}
+
+
+def _artist_rows(app, artist_id=None, followed=True, grid=False):
+    """Artists with album counts and a cover, in a single pass over albums.
+
+    The cover is the newest Album you have (else the newest Album at all), picked
+    with MAX() over "have-flag + date + mbid" instead of a per-artist subquery.
+    `grid=True` returns only what the Artists page shows, cached until the
+    artists/albums tables change, so several open tabs share one query."""
+    one = artist_id is not None
+    if grid and not one:
+        key = (app.db.version("artists", "albums"), followed)
+        if _grid_cache["key"] == key:
+            return _grid_cache["rows"]
+    alb_where = "WHERE artist_id = ?" if one else ""
+    where = "WHERE ar.id = ?" if one else ("WHERE COALESCE(ar.followed, 1) = 1" if followed else "")
+    cols = "ar.id, ar.name, ar.sort_name, ar.image, ar.sync_status, ar.added_at" if grid else \
+        ", ".join("ar." + c.strip() for c in ARTIST_COLS.split(","))
+    rows = app.db.q(f"""
+        WITH c AS (
+          SELECT artist_id,
+                 SUM(status != 'skipped') AS total,
+                 SUM(status = 'have') AS have,
+                 SUM(status IN ('searching','queued','downloading','importing')) AS active,
+                 SUM(status IN ('wanted','not_found','failed','missing')) AS missing,
+                 MAX(CASE WHEN primary_type = 'Album' AND status != 'skipped'
+                          THEN (status = 'have') || COALESCE(release_date, '') || '|' || mbid END) AS cov
+          FROM albums {alb_where} GROUP BY artist_id)
+        SELECT {cols},
+               COALESCE(c.total, 0) AS total, COALESCE(c.have, 0) AS have, COALESCE(c.active, 0) AS active,
+               COALESCE(c.missing, 0) AS missing,
+               substr(c.cov, instr(c.cov, '|') + 1) AS cover_mbid
+        FROM artists ar LEFT JOIN c ON c.artist_id = ar.id
+        {where} ORDER BY COALESCE(ar.sort_name, ar.name) COLLATE NOCASE""",
+        [artist_id, artist_id] if one else [])
+    if grid and not one:
+        _grid_cache.update(key=key, rows=rows)
+    return rows
 
 
 def _album_out(a):
@@ -82,7 +121,7 @@ def status(app, h, m, body):
         "worker_error": app.worker_error,
         "last_tick": app.last_tick,
         "counts": counts,
-        "artists": app.db.one("SELECT COUNT(*) n FROM artists")["n"],
+        "artists": app.db.one("SELECT COUNT(*) n FROM artists WHERE COALESCE(followed, 1) = 1")["n"],
         "version": __version__,
         "update": app.updater.banner() if h.me and h.me["role"] == "admin" else None,
     }
@@ -103,8 +142,12 @@ def put_settings(app, h, m, body):
     for k in SECRET_KEYS:
         if vals.get(k, "").startswith("•"):
             vals.pop(k)
+    before = {k: app.settings.raw()[k] for k in ("release_types", "exclude_secondary")}
     app.db.save_settings(vals)
     app.check_slskd()
+    if any(app.settings.raw()[k] != v for k, v in before.items()):
+        # Re-sort missing/skipped albums of artists that follow the global rules.
+        threading.Thread(target=app.reapply_all, daemon=True).start()
     app.wake.set()
     return get_settings(app, h, m, body)
 
@@ -146,9 +189,9 @@ def mb_artist_info(app, h, m, body):
     return app.artist_info(m.group(1))
 
 
-@route("GET", r"/api/artists", access="user")
+@route("GET", r"/api/artists", access="user", cache=("artists", "albums"))
 def list_artists(app, h, m, body):
-    return _artist_rows(app)
+    return _artist_rows(app, grid=True)
 
 
 @route("POST", r"/api/artists", access="artists")
@@ -162,13 +205,91 @@ def add_artist(app, h, m, body):
     # queued automatically: missing albums wait for them to pick, counted against the limit.
     if me["role"] != "admin" and (not app.auth.can(me, "downloads") or (me.get("daily_limit") or 0) > 0):
         auto = False
-    artist, created = app.add_artist(mbid, added_by=me["username"], auto_download=auto)
+    monitor = "new" if (body or {}).get("monitor") == "new" else "all"
+    artist, created = app.add_artist(mbid, added_by=me["username"], auto_download=auto, monitor=monitor)
     return {"artist": artist, "created": created}
 
 
-@route("GET", r"/api/artists/(\d+)", access="user")
+@route("PATCH", r"/api/artists/(\d+)")
+def update_artist(app, h, m, body):
+    """Per-artist rules: release_types ("album,ep" or null = global), include_secondary
+    (true/false/null), auto_download (true/false/null), monitor ("all" | "new")."""
+    try:
+        changed = app.set_artist_rules(int(m.group(1)), **(body or {}))
+    except KeyError:
+        raise HTTPError(404, "artist not found")
+    except ValueError as e:
+        raise HTTPError(400, str(e))
+    return {"artist": _artist_rows(app, int(m.group(1)))[0], "changed": changed}
+
+
+@route("POST", r"/api/artists/(\d+)/follow", access="artists")
+def follow_artist(app, h, m, body):
+    me, body = h.me, body or {}
+    auto = None
+    if me["role"] != "admin" and (not app.auth.can(me, "downloads") or (me.get("daily_limit") or 0) > 0):
+        auto = False
+    try:
+        artist, changed = app.follow_artist(int(m.group(1)), me["username"],
+                                            "new" if body.get("monitor") == "new" else "all", auto)
+    except KeyError:
+        raise HTTPError(404, "artist not found")
+    return {"artist": artist, "changed": changed}
+
+
+@route("GET", r"/api/mb/albums", access="user")
+def mb_album_search(app, h, m, body):
+    q = (h.query.get("q") or [""])[0].strip()
+    if not q:
+        return []
+    results = app.mb.search_release_groups(q)
+    if results:
+        marks = ",".join("?" * len(results))
+        known = {r["mbid"]: r for r in app.db.q(
+            f"SELECT al.mbid, al.id, al.status, al.artist_id, COALESCE(ar.followed, 1) AS followed "
+            f"FROM albums al JOIN artists ar ON ar.id = al.artist_id WHERE al.mbid IN ({marks})",
+            [r["mbid"] for r in results])}
+        artists = {r["mbid"]: r["id"] for r in app.db.q("SELECT id, mbid FROM artists")}
+        for r in results:
+            k = known.get(r["mbid"])
+            r["album_id"], r["status"] = (k["id"], k["status"]) if k else (None, None)
+            r["artist_id"] = artists.get(r["artist_mbid"])
+    return results
+
+
+@route("POST", r"/api/albums/request", access="downloads")
+def request_album(app, h, m, body):
+    """Get one album without following its artist."""
+    mbid, me = (body or {}).get("mbid"), h.me
+    if not mbid:
+        raise HTTPError(400, "mbid required")
+    row = app.db.one("SELECT id, status FROM albums WHERE mbid = ?", (mbid,))
+    if row and row["status"] in ("have", "wanted") + tuple(ACTIVE):
+        return {"album": _album_out(app.album(row["id"])), "created": False}
+    remaining = app.auth.remaining_today(me)
+    if remaining is not None and remaining <= 0:
+        raise HTTPError(429, f"Daily limit reached: you can queue {me['daily_limit']} album(s) a day. "
+                             "Ask an admin to raise your limit.")
+    try:
+        album, created = app.request_album(mbid, username=me["username"])
+    except ValueError as e:
+        raise HTTPError(400, str(e))
+    return {"album": _album_out(album), "created": created, "remaining": app.auth.remaining_today(me)}
+
+
+@route("GET", r"/api/requests", access="user", cache=("artists", "albums"))
+def requests_list(app, h, m, body):
+    """Albums fetched one-off, for artists you don't follow."""
+    rows = app.db.q(
+        "SELECT al.*, ar.name AS artist_name, ar.image AS artist_image FROM albums al "
+        "JOIN artists ar ON ar.id = al.artist_id WHERE ar.followed = 0 "
+        "ORDER BY al.requested_at DESC, al.updated_at DESC LIMIT 500")
+    return [_album_out(r) for r in rows]
+
+
+@route("GET", r"/api/artists/(\d+)", access="user", cache=("artists", "albums"))
 def get_artist(app, h, m, body):
-    rows = _artist_rows(app, "WHERE ar.id = ?", (int(m.group(1)),))
+    rows = _artist_rows(app, int(m.group(1)))
     if not rows:
         raise HTTPError(404, "artist not found")
     albums = app.db.q("SELECT * FROM albums WHERE artist_id = ? ORDER BY release_date DESC, title",
@@ -217,7 +338,7 @@ def album_action(app, h, m, body):
         raise HTTPError(404, "album not found")
 
 
-@route("GET", r"/api/queue", access="user")
+@route("GET", r"/api/queue", access="user", cache=("albums",))
 def queue(app, h, m, body):
     marks = ",".join("?" * len(ACTIVE))
     active = app.db.q(
@@ -260,7 +381,8 @@ def import_scan(app, h, m, body):
 @route("POST", r"/api/import/add")
 def import_add(app, h, m, body):
     body = body or {}
-    result = app.importer.add(body.get("items") or [], auto_download=bool(body.get("auto_download")))
+    result = app.importer.add(body.get("items") or [], auto_download=bool(body.get("auto_download")),
+                              only_new=bool(body.get("only_new")))
     return {"result": result, **app.importer.snapshot()}
 
 
@@ -272,7 +394,7 @@ def _today():
     return datetime.date.today().isoformat()
 
 
-@route("GET", r"/api/missing", access="user")
+@route("GET", r"/api/missing", access="user", cache=("artists", "albums"))
 def missing(app, h, m, body):
     rows = app.db.q(
         "SELECT al.*, ar.name AS artist_name FROM albums al JOIN artists ar ON ar.id = al.artist_id "
@@ -502,12 +624,12 @@ def make_handler(app):
         def log_message(self, fmt, *args):  # quiet
             pass
 
-        def _send(self, code, payload, ctype="application/json"):
+        def _send(self, code, payload, ctype="application/json", cache=None):
             data = payload if isinstance(payload, bytes) else json.dumps(payload).encode("utf-8")
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", cache or "no-store")
             for k, v in getattr(self, "extra_headers", []):
                 self.send_header(k, v)
             self.end_headers()
@@ -529,7 +651,7 @@ def make_handler(app):
             self.extra_headers = []
             self.token = None
             self.me = None
-            for meth, rx, fn, access in ROUTES:
+            for meth, rx, fn, access, cache in ROUTES:
                 if meth != method:
                     continue
                 m = rx.match(path)
@@ -547,8 +669,18 @@ def make_handler(app):
                         if access in PERM_LABEL and not app.auth.can(self.me, access):
                             return self._send(403, {"error": f"Your account isn't allowed to {PERM_LABEL[access]}. "
                                                              "Ask an admin if you need this."})
+                    etag = None
+                    if cache and method == "GET":
+                        etag = f'W/"{BOOT}-{app.db.version(*cache)}-{self.me["id"] if self.me else 0}"'
+                        if self.headers.get("If-None-Match") == etag:
+                            self.send_response(304)
+                            self.send_header("ETag", etag)
+                            self.send_header("Cache-Control", "no-cache, private")
+                            self.end_headers()
+                            return
+                        self.extra_headers.append(("ETag", etag))
                     try:
-                        return self._send(200, fn(app, self, m, body))
+                        return self._send(200, fn(app, self, m, body), cache="no-cache, private" if etag else None)
                     except HTTPError as e:
                         return self._send(e.code, {"error": str(e)})
                     except AuthError as e:

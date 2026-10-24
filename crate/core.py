@@ -20,7 +20,7 @@ import time
 import traceback
 from datetime import datetime, timedelta, timezone
 
-from .db import DB, Settings, now_iso, parse_iso
+from .db import DB, DEFAULTS, Settings, now_iso, parse_iso
 from .dupes import DupeScanner
 from .auth import Auth
 from .importer import LibraryImporter
@@ -183,16 +183,20 @@ class App:
             self.db.x("UPDATE artists SET image = ? WHERE mbid = ?", (info["image"], mbid))
         return info
 
-    def add_artist(self, mbid, added_by=None, auto_download=None):
+    def add_artist(self, mbid, added_by=None, auto_download=None, monitor="all"):
+        monitor = "new" if monitor == "new" else "all"
         existing = self.db.one("SELECT * FROM artists WHERE mbid = ?", (mbid,))
         if existing:
+            if existing.get("followed") == 0:  # only had one-off requests so far
+                return self.follow_artist(existing["id"], added_by, monitor, auto_download)
             return existing, False
         info = self.mb.get_artist(mbid)
         aid = self.db.x(
             "INSERT INTO artists (mbid, name, sort_name, disambiguation, country, added_at, sync_status, "
-            "added_by, auto_download) VALUES (?,?,?,?,?,?, 'pending', ?, ?)",
+            "added_by, auto_download, monitor, monitor_since) VALUES (?,?,?,?,?,?, 'pending', ?, ?, ?, ?)",
             (info["mbid"], info["name"], info["sort_name"], info["disambiguation"], info["country"], now_iso(),
-             added_by, None if auto_download is None else (1 if auto_download else 0)),
+             added_by, None if auto_download is None else (1 if auto_download else 0),
+             monitor, _utcnow().date().isoformat() if monitor == "new" else None),
         )
         self.db.event(f"Added artist {info['name']}" + (f" (by {added_by})" if added_by else ""),
                       artist_id=aid, username=added_by)
@@ -208,6 +212,147 @@ class App:
         if artist:
             self.db.event(f"Removed artist {artist['name']} (files on disk were not touched)")
 
+    # ------------------------------------------------------------ follow rules
+    def artist_rules(self, artist):
+        """What to fetch for this artist: its own settings, falling back to the global ones."""
+        own = [t.strip().lower() for t in (artist.get("release_types") or "").split(",") if t.strip()]
+        inc = artist.get("include_secondary")
+        if inc is None:
+            excl = self.settings.list("exclude_secondary")
+        elif inc:
+            excl = []
+        else:  # explicitly "leave them out", even if the global list was emptied
+            excl = self.settings.list("exclude_secondary") or [
+                p.strip() for p in DEFAULTS["exclude_secondary"].split(",")]
+        auto = (bool(artist["auto_download"]) if artist.get("auto_download") is not None
+                else self.settings.bool("auto_download"))
+        return {"types": own or self.settings.list("release_types"), "exclude": excl, "auto": auto,
+                "monitor": artist.get("monitor") or "all", "since": artist.get("monitor_since") or ""}
+
+    @staticmethod
+    def classify(rules, g):
+        """(status, detail, skip_reason) for an album that isn't in the library."""
+        sec = g.get("secondary_types") or []
+        if isinstance(sec, str):
+            sec = _loads(sec, [])
+        ptype = g.get("primary_type") or "Other"
+        if ptype.lower() not in rules["types"] or any(s.lower() in rules["exclude"] for s in sec):
+            kind = ", ".join([ptype] + list(sec))
+            return "skipped", f"{kind} — not a release type you follow", "type"
+        if rules["monitor"] == "new":
+            date = g.get("release_date") or ""
+            if not date or date < rules["since"][:len(date)]:
+                return "skipped", "Released before you followed (new releases only)", "before_follow"
+        if rules["auto"]:
+            return "wanted", None, None
+        return "missing", "Click Download to fetch", None
+
+    def reapply_rules(self, artist_id):
+        """Re-sort missing/skipped albums after the rules changed. Leaves alone what you
+        have, what's in progress, what you skipped by hand and what someone requested."""
+        artist = self.db.one("SELECT * FROM artists WHERE id = ?", (artist_id,))
+        if not artist or not (artist.get("followed") if artist.get("followed") is not None else 1):
+            return 0
+        rules = self.artist_rules(artist)
+        changed = 0
+        for a in self.db.q(
+                "SELECT * FROM albums WHERE artist_id = ? AND requested_by IS NULL AND ("
+                "status = 'missing' OR (status = 'wanted' AND COALESCE(attempts, 0) = 0 "
+                "AND COALESCE(query_index, 0) = 0 AND search_id IS NULL) "
+                "OR (status = 'skipped' AND skip_reason IN ('type', 'before_follow')))", (artist_id,)):
+            status, detail, reason = self.classify(rules, a)
+            if status == a["status"] and reason == a.get("skip_reason"):
+                continue
+            if status == "wanted":
+                detail = "Waiting to search"
+            self.db.update_album(a["id"], status=status, status_detail=detail, skip_reason=reason)
+            changed += 1
+        if changed:
+            self.wake.set()
+        return changed
+
+    def reapply_all(self):
+        n = 0
+        for a in self.db.q("SELECT id FROM artists WHERE COALESCE(followed, 1) = 1"):
+            n += self.reapply_rules(a["id"])
+        return n
+
+    def set_artist_rules(self, artist_id, **fields):
+        allowed = {"release_types", "include_secondary", "auto_download", "monitor"}
+        artist = self.db.one("SELECT * FROM artists WHERE id = ?", (artist_id,))
+        if not artist:
+            raise KeyError("artist not found")
+        sets = {}
+        for k, v in fields.items():
+            if k not in allowed:
+                continue
+            if k == "release_types":
+                if v is None or v == "" or v == []:
+                    v = None
+                else:
+                    parts = v if isinstance(v, list) else str(v).split(",")
+                    v = ",".join(p.strip().lower() for p in parts if p.strip()) or None
+            elif k in ("include_secondary", "auto_download"):
+                v = None if v is None or v == "" else (1 if v in (True, 1, "1", "true", "yes", "on") else 0)
+            elif k == "monitor":
+                if v not in ("all", "new"):
+                    raise ValueError("monitor must be 'all' or 'new'")
+                if v == "new" and artist.get("monitor") != "new":
+                    sets["monitor_since"] = _utcnow().date().isoformat()
+            sets[k] = v
+        if sets:
+            cols = ", ".join(f"{k} = ?" for k in sets)
+            self.db.x(f"UPDATE artists SET {cols} WHERE id = ?", (*sets.values(), artist_id))
+        return self.reapply_rules(artist_id)
+
+    def follow_artist(self, artist_id, username=None, monitor="all", auto_download=None):
+        artist = self.db.one("SELECT * FROM artists WHERE id = ?", (artist_id,))
+        if not artist:
+            raise KeyError("artist not found")
+        if artist.get("followed") in (None, 1):
+            return artist, False
+        self.db.x("UPDATE artists SET followed = 1, monitor = ?, monitor_since = ?, added_by = COALESCE(added_by, ?), "
+                  "auto_download = ?, last_synced = NULL WHERE id = ?",
+                  (monitor, _utcnow().date().isoformat() if monitor == "new" else None, username,
+                   None if auto_download is None else (1 if auto_download else 0), artist_id))
+        self.db.event(f"Now following {artist['name']}" + (f" (by {username})" if username else ""),
+                      artist_id=artist_id, username=username)
+        threading.Thread(target=self.sync_artist, args=(artist_id,), daemon=True).start()
+        return self.db.one("SELECT * FROM artists WHERE id = ?", (artist_id,)), True
+
+    def request_album(self, rg_mbid, username=None):
+        """Fetch one album without following its artist. Returns the album row."""
+        row = self.db.one("SELECT id FROM albums WHERE mbid = ?", (rg_mbid,))
+        if row:
+            return self.album_action(row["id"], "download", username), False
+        g = self.mb.release_group(rg_mbid)
+        if not g.get("artist_mbid"):
+            raise ValueError("That release has no artist on MusicBrainz")
+        artist = self.db.one("SELECT * FROM artists WHERE mbid = ?", (g["artist_mbid"],))
+        if not artist:
+            info = self.mb.get_artist(g["artist_mbid"])
+            aid = self.db.x(
+                "INSERT INTO artists (mbid, name, sort_name, disambiguation, country, added_at, sync_status, "
+                "added_by, followed, monitored) VALUES (?,?,?,?,?,?, 'ok', ?, 0, 0)",
+                (info["mbid"], info["name"], info["sort_name"], info["disambiguation"], info["country"],
+                 now_iso(), username))
+            threading.Thread(target=self._artist_image, args=(info["mbid"],), daemon=True).start()
+            artist = self.db.one("SELECT * FROM artists WHERE id = ?", (aid,))
+        album_id = self.db.x(
+            "INSERT INTO albums (mbid, artist_id, title, primary_type, secondary_types, release_date, year, "
+            "status, status_detail, updated_at) VALUES (?,?,?,?,?,?,?, 'missing', NULL, ?)",
+            (g["mbid"], artist["id"], g["title"], g["primary_type"], json.dumps(g["secondary_types"]),
+             g["release_date"], g["year"], now_iso()))
+        self.db.event(f"Requested {artist['name']} — {g['title']}" + (f" (by {username})" if username else ""),
+                      artist_id=artist["id"], album_id=album_id, username=username)
+        return self.album_action(album_id, "download", username), True
+
+    def _artist_image(self, mbid):
+        try:
+            self.artist_info(mbid)
+        except Exception:
+            pass
+
     def sync_artist(self, artist_id):
         with self._sync_lock:
             artist = self.db.one("SELECT * FROM artists WHERE id = ?", (artist_id,))
@@ -221,37 +366,33 @@ class App:
                     pass
             try:
                 groups = self.mb.release_groups(artist["mbid"])
-                types = self.settings.list("release_types")
-                excl = self.settings.list("exclude_secondary")
-                auto = (bool(artist["auto_download"]) if artist.get("auto_download") is not None
-                        else self.settings.bool("auto_download"))
+                rules = self.artist_rules(artist)
+                auto = rules["auto"]
+                followed = artist.get("followed") is None or bool(artist.get("followed"))
                 if time.monotonic() - self.last_scan > 60:
                     self.library.scan()
                     self.last_scan = time.monotonic()
                 new = have = 0
                 for g in groups:
                     row = self.db.one("SELECT id FROM albums WHERE mbid = ?", (g["mbid"],))
+                    if not row and not followed:
+                        continue  # request-only artist: just refresh the albums you asked for
                     if row:
                         self.db.update_album(row["id"], title=g["title"], release_date=g["release_date"],
                                              year=g["year"], primary_type=g["primary_type"],
                                              secondary_types=json.dumps(g["secondary_types"]))
                         continue
-                    follow = g["primary_type"].lower() in types and not any(
-                        s.lower() in excl for s in g["secondary_types"])
                     path = self.find_in_library(artist["name"], g["title"], artist.get("local_name"))
                     if path:
-                        status, detail = "have", "Already in your library"
+                        status, detail, reason = "have", "Already in your library", None
                         have += 1
-                    elif not follow:
-                        kind = ", ".join([g["primary_type"]] + g["secondary_types"])
-                        status, detail = "skipped", f"{kind} — not a release type you follow"
                     else:
-                        status, detail = ("wanted", None) if auto else ("missing", "Click Download to fetch")
+                        status, detail, reason = self.classify(rules, g)
                     self.db.x(
                         "INSERT INTO albums (mbid, artist_id, title, primary_type, secondary_types, release_date, "
-                        "year, status, status_detail, path, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        "year, status, status_detail, path, skip_reason, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                         (g["mbid"], artist_id, g["title"], g["primary_type"], json.dumps(g["secondary_types"]),
-                         g["release_date"], g["year"], status, detail, path, now_iso()),
+                         g["release_date"], g["year"], status, detail, path, reason, now_iso()),
                     )
                     new += 1
                 self.db.x("UPDATE artists SET last_synced = ?, sync_status = 'ok' WHERE id = ?",
@@ -282,12 +423,13 @@ class App:
                 self.db.update_album(album_id, status="have", status_detail="Already in your library", path=path)
             else:
                 self.db.update_album(album_id, status="wanted", status_detail="Waiting to search", query_index=0,
+                                     skip_reason=None,
                                      candidates=None, candidate_index=0, tried_users="[]", attempts=0,
                                      next_retry=None, search_id=None,
                                      requested_by=username, requested_at=now_iso() if username else None)
         elif action == "skip":
             self._cancel_active(a)
-            self.db.update_album(album_id, status="skipped", status_detail="Skipped by you")
+            self.db.update_album(album_id, status="skipped", status_detail="Skipped by you", skip_reason="user")
         elif action == "next_source":
             if a["status"] == "downloading":
                 self._abandon(self.slskd(), a, "skipped by you")
@@ -361,7 +503,7 @@ class App:
         hours = max(self.settings.int("sync_hours"), 1)
         cutoff = (_utcnow() - timedelta(hours=hours)).replace(microsecond=0).isoformat()
         stale = self.db.one(
-            "SELECT id FROM artists WHERE monitored = 1 AND sync_status != 'syncing' "
+            "SELECT id FROM artists WHERE monitored = 1 AND COALESCE(followed, 1) = 1 AND sync_status != 'syncing' "
             "AND (last_synced IS NULL OR last_synced < ?) ORDER BY last_synced LIMIT 1", (cutoff,))
         if stale:
             threading.Thread(target=self.sync_artist, args=(stale["id"],), daemon=True).start()

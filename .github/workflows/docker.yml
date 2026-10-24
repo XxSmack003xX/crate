@@ -41,6 +41,7 @@ jobs:
           python tests/test_slskd_roles.py
           python tests/test_auth.py
           python tests/test_updater.py
+          python tests/test_rules.py
 
   image:
     needs: test

@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.request
 from collections import Counter
 
-VERSION = "1.3"
+VERSION = "1.4"
 # MusicBrainz allows ~1 request/second per client.
 MIN_INTERVAL = float(os.environ.get("CRATE_MB_INTERVAL", "1.1"))
 
@@ -140,6 +140,30 @@ class MusicBrainz:
                 "release_count": len(groups),
                 # all release titles (up to 25), used to confirm library-import matches
                 "titles": [g.get("title", "") for g in groups]}
+
+    @staticmethod
+    def _credit(g):
+        credit = g.get("artist-credit") or []
+        first = next((c.get("artist") for c in credit if isinstance(c, dict) and c.get("artist")), None) or {}
+        name = "".join((c.get("name") or (c.get("artist") or {}).get("name", "")) + (c.get("joinphrase") or "")
+                       for c in credit if isinstance(c, dict)) or first.get("name", "")
+        return first.get("id"), name
+
+    def _group(self, g):
+        date = g.get("first-release-date") or ""
+        aid, aname = self._credit(g)
+        return {"mbid": g["id"], "title": g.get("title", ""), "primary_type": g.get("primary-type") or "Other",
+                "secondary_types": list(g.get("secondary-types") or []), "release_date": date,
+                "year": date[:4] if date else "", "artist_mbid": aid, "artist_name": aname,
+                "disambiguation": g.get("disambiguation", ""), "score": g.get("score")}
+
+    def search_release_groups(self, query, limit=12):
+        """Albums/EPs/singles matching free text, e.g. 'ok computer' or 'radiohead kid a'."""
+        data = self._get("release-group", {"query": query, "limit": limit})
+        return [self._group(g) for g in data.get("release-groups", [])]
+
+    def release_group(self, rg_mbid):
+        return self._group(self._get(f"release-group/{rg_mbid}", {"inc": "artist-credits"}))
 
     def release_groups(self, artist_mbid):
         """All release groups (albums, EPs, singles...) for an artist."""

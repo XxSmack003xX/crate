@@ -276,6 +276,24 @@ def make(state):
                                                   "primary-type": "Album", "secondary-types": [],
                                                   "first-release-date": "2017-02-02"}]
                 return self.send(200, out)
+            owners = [(GROUPS, ARTIST), (OWL_GROUPS, ARTIST3), (JAZZ_GROUPS, ARTIST2)]
+
+            def rg_json(g, art):
+                return {"id": g[0], "title": g[1], "primary-type": g[2], "secondary-types": g[3],
+                        "first-release-date": g[4], "score": 100,
+                        "artist-credit": [{"name": art["name"], "artist": {"id": art["id"], "name": art["name"]}}]}
+            if path == "release-group" and "query" in qs:
+                q = qs["query"][0].lower()
+                hits = [rg_json(g, art) for src, art in owners for g in src
+                        if any(w in g[1].lower() for w in q.split())]
+                return self.send(200, {"release-groups": hits})
+            if path.startswith("release-group/"):
+                rg = path.split("/", 1)[1]
+                for src, art in owners:
+                    for g in src:
+                        if g[0] == rg:
+                            return self.send(200, rg_json(g, art))
+                return self.send(404)
             if path == "release-group":
                 src = {"a-2": JAZZ_GROUPS, "a-3": OWL_GROUPS}.get(qs.get("artist", [""])[0], GROUPS)
                 rgs = [{"id": g[0], "title": g[1], "primary-type": g[2], "secondary-types": g[3],

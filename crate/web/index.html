@@ -95,6 +95,26 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: v
   text-transform: uppercase; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.65)); padding: 8px 2px 3px; text-align: center; z-index: 1; white-space: nowrap; }
 .result .cover .src { font-size: 8.5px; letter-spacing: .02em; }
 .empty { padding: 18px; color: var(--muted); text-align: center; }
+.addopts { display: flex; gap: 8px 14px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin: 2px 0 6px; }
+.addopts label { display: flex; align-items: center; gap: 6px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--card); }
+.seg button { border: 0; background: none; padding: 5px 12px; cursor: pointer; color: var(--muted); font-weight: 600; font-size: 13px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--bg2); color: var(--ink); }
+.sel { padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); font-size: 13px; max-width: 100%; }
+.gridbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 22px 0 14px; }
+.gridbar input { flex: 1 1 180px; max-width: 320px; min-width: 0; padding: 7px 11px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); outline: none; font-size: 14px; }
+.gridbar input:focus { border-color: var(--accent); }
+.gridbar .n { color: var(--muted); font-size: 13px; margin-left: auto; }
+.more { display: flex; justify-content: center; margin: 24px 0 8px; }
+.result .cover.sq { border-radius: 6px; }
+.chip { display: inline-block; font-size: 11.5px; font-weight: 650; padding: 2px 8px; border-radius: 99px; background: var(--bg2); color: var(--muted); vertical-align: middle; }
+.rules { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px 16px 14px; margin-top: 18px; }
+.rules .field { grid-template-columns: 190px 1fr; }
+.rules .checks { display: flex; flex-wrap: wrap; gap: 6px 14px; padding-top: 7px; font-size: 14px; }
+.rules .checks label { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+@media (max-width: 720px) { .rules .field { grid-template-columns: 1fr; } .rules .field .hint { grid-column: 1; } .rules .field label { padding-top: 0; } }
+.rules .foot { display: flex; gap: 8px; justify-content: flex-end; padding-top: 8px; flex-wrap: wrap; }
 
 /* artist grid */
 .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -443,25 +463,64 @@ function banner() {
 
 /* ---------------- artists list ---------------- */
 let searchSeq = 0;
+const ls = { get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
+             set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+let searchMode = ls.get("crate.searchMode", "artists"), addMonitor = ls.get("crate.addMonitor", "all");
+let gridFilter = "", gridSort = ls.get("crate.sort", "name"), gridLimit = 200, gridKey = "";
+const PAGE = 200;
+const SORTS = [["name", "Name"], ["added", "Recently added"], ["missing", "Most missing"], ["active", "Downloading"], ["least", "Least complete"]];
+const fold = t => (t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+function sortArtists(list) {
+  const pct = a => a.total ? a.have / a.total : 2;
+  const by = { added: (a, b) => (b.added_at || "").localeCompare(a.added_at || ""),
+    missing: (a, b) => b.missing - a.missing, active: (a, b) => b.active - a.active || b.missing - a.missing,
+    least: (a, b) => pct(a) - pct(b) }[gridSort];
+  if (!by) return list;
+  return list.map((a, i) => [a, i]).sort((x, y) => by(x[0], y[0]) || x[1] - y[1]).map(x => x[0]);
+}
 async function viewArtists(first) {
-  const artists = await api("/api/artists");
+  const [artists, requests] = await Promise.all([api("/api/artists"), api("/api/requests").catch(() => [])]);
   if (first) {
+    gridKey = "";
     view.innerHTML = `
       <div id="ban"></div>
       <div class="toolbar"><h1 class="grow">Your artists</h1>
         ${isAdmin() ? `<button class="btn ghost" id="rescan" title="Look for albums you already have on disk">Rescan library</button>
         <a class="btn" href="#/import" title="Find the artists already in your music folder and follow them">Import from library</a>` : ""}</div>
-      <div class="addbox" ${can("artists") ? "" : "hidden"}>
+      <div class="addbox" ${can("artists") || can("downloads") ? "" : "hidden"}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input id="q" placeholder="Add an artist — search MusicBrainz…" autocomplete="off">
+        <input id="q" autocomplete="off">
         <div class="results" id="res" hidden></div>
       </div>
-      <div id="grid"></div>`;
+      <div class="addopts" ${can("artists") || can("downloads") ? "" : "hidden"}>
+        <span class="seg" role="group" aria-label="Search for">
+          <button data-mode="artists">Artists</button><button data-mode="albums">Albums</button></span>
+        <label id="monwrap">When adding
+          <select class="sel" id="addmon" title="New releases only: older albums are skipped, but you can still download any of them by hand">
+            <option value="all">All releases</option><option value="new">Only new releases</option></select></label>
+        <span id="modehint"></span>
+      </div>
+      <div id="grid"></div>
+      <div id="reqs"></div>`;
     const q = $("#q"), res = $("#res");
+    const setMode = mode => {
+      if (mode === "artists" && !can("artists")) mode = "albums";
+      if (mode === "albums" && !can("downloads")) mode = "artists";
+      searchMode = mode; ls.set("crate.searchMode", mode);
+      view.querySelectorAll("[data-mode]").forEach(b => { b.classList.toggle("on", b.dataset.mode === mode); b.hidden = !can(b.dataset.mode === "artists" ? "artists" : "downloads"); });
+      q.placeholder = mode === "albums" ? "Get one album — search by title, or artist and title…" : "Add an artist — search MusicBrainz…";
+      $("#monwrap").hidden = mode !== "artists";
+      $("#modehint").textContent = mode === "albums" ? "Fetches just that album; the artist isn't followed." : "";
+      if (q.value.trim()) doSearch(q.value);
+    };
+    view.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { setMode(b.dataset.mode); q.focus(); });
+    const mon = $("#addmon"); mon.value = addMonitor;
+    mon.onchange = () => { addMonitor = mon.value; ls.set("crate.addMonitor", addMonitor); };
+    setMode(searchMode);
     let h;
     q.addEventListener("input", () => { clearTimeout(h); h = setTimeout(() => doSearch(q.value), 350); });
     q.addEventListener("keydown", e => { if (e.key === "Escape") { res.hidden = true; q.blur(); } });
-    document.addEventListener("click", e => { if (!e.target.closest(".addbox")) res.hidden = true; });
+    document.addEventListener("click", e => { if (!e.target.closest(".addbox") && !e.target.closest(".addopts") && $("#res")) $("#res").hidden = true; });
     q.addEventListener("focus", () => { if (res.innerHTML) res.hidden = false; });
     if ($("#rescan")) $("#rescan").onclick = async e => {
       e.target.disabled = true;
@@ -470,28 +529,71 @@ async function viewArtists(first) {
     };
   }
   const nMissing = (status && status.counts && status.counts.missing) || 0;
-  $("#ban").innerHTML = banner() + (nMissing ? `<div class="banner"><div style="flex:1"><b>${nMissing} album${nMissing === 1 ? "" : "s"} missing from your library</b> aren't set to download yet.</div><a class="btn primary" href="#/missing">Review missing albums</a></div>` : "");
+  const ban = banner() + (nMissing ? `<div class="banner"><div style="flex:1"><b>${nMissing} album${nMissing === 1 ? "" : "s"} missing from your library</b> aren't set to download yet.</div><a class="btn primary" href="#/missing">Review missing albums</a></div>` : "");
+  if ($("#ban").innerHTML !== ban) $("#ban").innerHTML = ban;
+  renderGrid(artists);
+  renderRequests(requests);
+}
+function renderGrid(artists) {
   const g = $("#grid");
+  if (!g) return;
+  const key = JSON.stringify([artists, gridFilter, gridSort, gridLimit]);
+  if (key === gridKey) return;  // nothing changed: keep the DOM (and loaded images) as they are
+  gridKey = key;
   if (!artists.length) {
+    g.className = "";
     g.innerHTML = `<div class="blank"><div class="big">No artists yet</div>Search above to add one — Crate will pull their discography and start fetching what you don't have.</div>`;
     return;
   }
-  g.className = "grid";
-  g.innerHTML = artists.map(a => {
+  const f = fold(gridFilter.trim());
+  const list = sortArtists(f ? artists.filter(a => fold(a.name).includes(f) || fold(a.sort_name).includes(f)) : artists);
+  const shown = list.slice(0, gridLimit);
+  const bar = $("#gridbar");
+  const count = f ? `${list.length.toLocaleString()} of ${artists.length.toLocaleString()} artists` : `${artists.length.toLocaleString()} artist${artists.length === 1 ? "" : "s"}`;
+  if (!bar) {
+    g.className = "";
+    g.innerHTML = `<div class="gridbar" id="gridbar">
+        <input id="gf" type="search" placeholder="Filter your artists…" aria-label="Filter your artists" value="${esc(gridFilter)}">
+        <select class="sel" id="gs" aria-label="Sort artists">${SORTS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
+        <span class="n" id="gn"></span></div>
+      <div class="grid" id="gcards"></div><div class="more" id="gmore"></div>`;
+    const gf = $("#gf"), gs = $("#gs");
+    gs.value = gridSort;
+    let t;
+    gf.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { gridFilter = gf.value; gridLimit = PAGE; viewArtists(false).catch(() => {}); }, 120); });
+    gs.onchange = () => { gridSort = gs.value; ls.set("crate.sort", gridSort); gridLimit = PAGE; viewArtists(false).catch(() => {}); };
+  }
+  $("#gn").textContent = count;
+  $("#gcards").innerHTML = shown.length ? shown.map(a => {
     const pct = a.total ? Math.round(a.have * 100 / a.total) : 0;
     const syncing = a.sync_status === "syncing" || a.sync_status === "pending";
     const line = syncing ? `<span class="pulse"></span>Fetching discography…`
       : a.active ? `<span class="pulse"></span>${a.active} downloading · ${a.have}/${a.total}`
-      : `${a.have} of ${a.total} releases`;
+      : `${a.have} of ${a.total} releases${a.missing ? ` · ${a.missing} missing` : ""}`;
     return `<a class="acard" href="#/artist/${a.id}">${artistArt(a)}
       <div class="name" title="${esc(a.name)}">${esc(a.name)}</div>
       <div class="stat">${line}</div>
       <div class="meter${a.active ? " dl" : ""}"><i style="width:${pct}%"></i></div></a>`;
-  }).join("");
+  }).join("") : `<div class="blank" style="grid-column:1/-1">No artists match “${esc(gridFilter)}”.</div>`;
+  const rest = list.length - shown.length;
+  $("#gmore").innerHTML = rest > 0 ? `<button class="btn" id="gmorebtn">Show ${Math.min(rest, PAGE).toLocaleString()} more <span class="sub">· ${rest.toLocaleString()} left</span></button>` : "";
+  const mb = $("#gmorebtn"); if (mb) mb.onclick = () => { gridLimit += PAGE; viewArtists(false).catch(() => {}); };
+}
+let reqKey = "";
+function renderRequests(reqs) {
+  const box = $("#reqs"); if (!box) return;
+  const key = JSON.stringify(reqs);
+  if (key === reqKey && box.innerHTML) return;
+  reqKey = key;
+  box.innerHTML = reqs.length ? `<h2>Requested albums <span class="chip">${reqs.length}</span></h2>
+    <div class="sub" style="font-size:13px;margin:-6px 0 10px">One-off albums from artists you don't follow.</div>
+    <div class="albums">${reqs.map(a => albumRow(a, true)).join("")}</div>` : "";
+  bindAlbumActions(box);
 }
 async function doSearch(term) {
   const res = $("#res"); term = term.trim();
   if (!term) { res.hidden = true; res.innerHTML = ""; return; }
+  if (searchMode === "albums") return doAlbumSearch(term);
   const seq = ++searchSeq;
   res.hidden = false; res.innerHTML = `<div class="empty">Searching…</div>`;
   let items;
@@ -509,9 +611,39 @@ async function doSearch(term) {
   loadResultInfo(items, seq);
   res.querySelectorAll("[data-add]").forEach(b => b.onclick = async () => {
     b.disabled = true; b.textContent = "Adding…";
-    try { const r = await api("/api/artists", { method: "POST", body: { mbid: b.dataset.add } });
-      toast(`Added ${r.artist.name} — fetching discography`); location.hash = "#/artist/" + r.artist.id; }
+    try { const r = await api("/api/artists", { method: "POST", body: { mbid: b.dataset.add, monitor: addMonitor } });
+      toast(`Added ${r.artist.name} — ${addMonitor === "new" ? "following new releases only" : "fetching discography"}`); location.hash = "#/artist/" + r.artist.id; }
     catch (e) { toast(e.message); b.disabled = false; b.textContent = "Add"; }
+  });
+}
+const ACTIVE_ST = ["wanted", "searching", "queued", "downloading", "importing"];
+async function doAlbumSearch(term) {
+  const res = $("#res"), seq = ++searchSeq;
+  res.hidden = false; res.innerHTML = `<div class="empty">Searching…</div>`;
+  let items;
+  try { items = await api("/api/mb/albums?q=" + encodeURIComponent(term)); }
+  catch (e) { if (seq === searchSeq) res.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  if (seq !== searchSeq) return;
+  if (!items.length) { res.innerHTML = `<div class="empty">No albums found</div>`; return; }
+  res.innerHTML = items.map(g => {
+    const kind = [g.primary_type, ...(g.secondary_types || [])].filter(Boolean).join(" · ");
+    const bits = [g.artist_name, g.year, kind, g.disambiguation].filter(Boolean);
+    let act;
+    if (g.status === "have") act = `<span class="pill s-have">In library</span>`;
+    else if (ACTIVE_ST.includes(g.status)) act = `<span class="pill s-${g.status === "wanted" ? "wanted" : "searching"}">${LABEL[g.status]}</span>`;
+    else act = `<button class="btn primary sm" data-get="${esc(g.mbid)}">Get album</button>`;
+    return `<div class="result">${art([caa(g.mbid, 250)], g.title, "sq")}
+      <div class="meta"><div class="name">${esc(g.title)}</div><div class="desc">${esc(bits.join(" · "))}</div>
+        ${g.artist_id ? `<div class="known"><a href="#/artist/${g.artist_id}">Open ${esc(g.artist_name)}</a></div>` : ""}</div>${act}</div>`;
+  }).join("");
+  res.querySelectorAll("[data-get]").forEach(b => b.onclick = async () => {
+    b.disabled = true; b.textContent = "Requesting…";
+    try {
+      const r = await api("/api/albums/request", { method: "POST", body: { mbid: b.dataset.get } });
+      const a = r.album;
+      toast(a.status === "have" ? `${a.title} is already in your library` : `Requested ${a.title}${r.remaining != null ? ` · ${r.remaining} left today` : ""}`);
+      res.hidden = true; location.hash = "#/artist/" + a.artist_id;
+    } catch (e) { toast(e.message); b.disabled = false; b.textContent = "Get album"; }
   });
 }
 
@@ -551,9 +683,16 @@ function unchanged(first, data) {
   if (!first && k === lastKey) return true;
   lastKey = k; return false;
 }
+let rulesOpen = false, rulesFor = null;
 async function viewArtist(id, first) {
+  if (first && rulesFor !== id) rulesOpen = false;
+  if (!first && rulesOpen) return;  // don't wipe a half-edited rules form
   const { artist: a, albums } = await api("/api/artists/" + id);
   if (unchanged(first, [a, albums, artistTab, showSkipped, status && status.slskd])) return;
+  const followed = a.followed !== 0;
+  const custom = followed && (a.release_types || a.include_secondary != null || a.auto_download != null);
+  const followNote = !followed ? `<div class="banner"><div style="flex:1"><b>You don't follow ${esc(a.name)}.</b> Only the albums you requested are listed; new releases aren't fetched.</div>
+      ${can("artists") ? `<button class="btn primary" data-follow="all">Follow artist</button><button class="btn" data-follow="new">Follow new releases only</button>` : ""}</div>` : "";
   const tabOf = al => ["Album", "EP", "Single"].includes(al.primary_type) ? al.primary_type : "Other";
   const counts = {}; albums.forEach(al => { const t = tabOf(al); counts[t] = (counts[t] || 0) + 1; }); counts.all = albums.length;
   if (first && !counts[artistTab]) artistTab = counts.Album ? "Album" : "all";
@@ -566,7 +705,8 @@ async function viewArtist(id, first) {
       <div class="info">
         <a href="#/" class="sub" style="text-decoration:none;font-size:13px">← All artists</a>
         <h1>${esc(a.name)}</h1>
-        <div class="sub">${esc([a.disambiguation, a.country].filter(Boolean).join(" · "))}${a.last_synced ? ` · discography checked ${ago(a.last_synced)}` : ""}</div>
+        <div class="sub">${esc([a.disambiguation, a.country].filter(Boolean).join(" · "))}${a.last_synced && followed ? ` · discography checked ${ago(a.last_synced)}` : ""}</div>
+        ${followed && (a.monitor === "new" || custom) ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${a.monitor === "new" ? `<span class="chip" title="Older albums are skipped; you can still download them by hand">New releases since ${esc(a.monitor_since || "")}</span>` : ""}${custom ? `<span class="chip">Custom rules</span>` : ""}</div>` : ""}
         <div class="stats">
           <span><b>${a.have}</b> <span class="sub">in library</span></span>
           <span><b>${a.active}</b> <span class="sub">in progress</span></span>
@@ -575,19 +715,29 @@ async function viewArtist(id, first) {
         </div>
         <div class="actions">
           ${a.missing && can("downloads") ? `<button class="btn primary" id="dlall">Download all missing</button>` : ""}
-          ${can("artists") ? `<button class="btn" id="sync">Refresh discography</button>` : ""}
+          ${can("artists") && followed ? `<button class="btn" id="sync">Refresh discography</button>` : ""}
+          ${isAdmin() && followed ? `<button class="btn" id="rulesbtn" aria-expanded="${rulesOpen}">What to fetch…</button>` : ""}
           <a class="btn ghost" href="https://musicbrainz.org/artist/${esc(a.mbid)}" target="_blank" rel="noopener">MusicBrainz ↗</a>
           ${isAdmin() ? `<button class="btn ghost danger" id="del">Remove artist</button>` : ""}
         </div>
       </div>
     </div>
+    ${followNote}<div id="rulesbox"></div>
     <div class="tabs">
       ${TYPE_TABS.filter(([k]) => counts[k] || k === "all").map(([k, l]) => `<button data-tab="${k}" class="${k === artistTab ? "on" : ""}">${l}<span class="n">${counts[k] || 0}</span></button>`).join("")}
       <span class="sp"></span>
       ${hidden && ["all", "Album", "EP"].includes(artistTab) ? `<label><input type="checkbox" id="skp" ${showSkipped ? "checked" : ""}> Show ${hidden} skipped</label>` : ""}
     </div>
-    <div class="albums">${list.length ? list.map(albumRow).join("") : `<div class="blank">${syncing ? "Loading releases…" : "Nothing here."}</div>`}</div>`;
+    <div class="albums">${list.length ? list.map(a => albumRow(a)).join("") : `<div class="blank">${syncing ? "Loading releases…" : "Nothing here."}</div>`}</div>`;
   view.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { artistTab = b.dataset.tab; render(true); });
+  view.querySelectorAll("[data-follow]").forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await api(`/api/artists/${id}/follow`, { method: "POST", body: { monitor: b.dataset.follow } });
+      toast(`Following ${a.name} — fetching discography`); setTimeout(() => render(true), 400); }
+    catch (e) { toast(e.message); b.disabled = false; }
+  });
+  if ($("#rulesbtn")) $("#rulesbtn").onclick = () => { rulesOpen = !rulesOpen; rulesFor = id; if (rulesOpen) openRules(a); else $("#rulesbox").innerHTML = ""; $("#rulesbtn").setAttribute("aria-expanded", rulesOpen); };
+  if (rulesOpen && rulesFor === id) openRules(a);
   const skp = $("#skp"); if (skp) skp.onchange = () => { showSkipped = skp.checked; render(true); };
   if ($("#sync")) $("#sync").onclick = async () => { await api(`/api/artists/${id}/sync`, { method: "POST" }); toast("Checking MusicBrainz for new releases"); setTimeout(render, 600); };
   const dl = $("#dlall"); if (dl) dl.onclick = async () => { try { const r = await api(`/api/artists/${id}/download-all`, { method: "POST" }); toast(r.message || `${r.count} release(s) queued`); } catch (e) { toast(e.message); } render(); };
@@ -598,11 +748,53 @@ async function viewArtist(id, first) {
   };
   bindAlbumActions();
 }
+const RTYPES = [["album", "Albums"], ["ep", "EPs"], ["single", "Singles"], ["broadcast", "Broadcasts"], ["other", "Other"]];
+let globalRules = null;
+async function openRules(a) {
+  const box = $("#rulesbox"); if (!box) return;
+  if (!globalRules) { try { globalRules = await api("/api/settings"); } catch { globalRules = {}; } }
+  const gt = (globalRules.release_types || "album,ep").split(",").map(x => x.trim().toLowerCase()).filter(Boolean);
+  const own = a.release_types ? a.release_types.split(",") : null;
+  const on = own || gt;
+  const gAuto = ["true", "1", "yes", "on"].includes(String(globalRules.auto_download).toLowerCase());
+  const tri = v => v == null ? "" : v ? "1" : "0";
+  const label = t => (RTYPES.find(r => r[0] === t) || [t, t])[1];
+  box.innerHTML = `<form class="rules" id="rulesf">
+    <div class="field"><label>Release types</label>
+      <div><div class="checks"><label><input type="checkbox" id="r-global" ${own ? "" : "checked"}> Same as Settings <span class="sub">(${esc(gt.map(label).join(", ") || "none")})</span></label></div>
+      <div class="checks" id="r-types">${RTYPES.map(([k, l]) => `<label><input type="checkbox" data-rt="${k}" ${on.includes(k) ? "checked" : ""} ${own ? "" : "disabled"}> ${l}</label>`).join("")}</div></div></div>
+    <div class="field"><label for="r-sec">Live, compilations, remixes</label>
+      <select class="sel" id="r-sec"><option value="">Same as Settings (leave out)</option><option value="1">Include them</option><option value="0">Leave them out</option></select></div>
+    <div class="field"><label for="r-auto">Download automatically</label>
+      <select class="sel" id="r-auto"><option value="">Same as Settings (${gAuto ? "on" : "off"})</option><option value="1">On</option><option value="0">Off — I'll pick</option></select></div>
+    <div class="field"><label for="r-mon">Fetch</label>
+      <select class="sel" id="r-mon"><option value="all">The whole discography</option><option value="new">Only new releases${a.monitor === "new" && a.monitor_since ? ` (since ${esc(a.monitor_since)})` : " (from today)"}</option></select>
+      <div class="hint">Albums you already have, downloads in progress and albums you skipped by hand stay as they are.</div></div>
+    <div class="foot"><button type="button" class="btn ghost" id="r-cancel">Cancel</button><button class="btn primary" id="r-save">Save</button></div>
+  </form>`;
+  $("#r-sec").value = tri(a.include_secondary); $("#r-auto").value = tri(a.auto_download); $("#r-mon").value = a.monitor || "all";
+  $("#r-global").onchange = e => box.querySelectorAll("[data-rt]").forEach(c => { c.disabled = e.target.checked; if (e.target.checked) c.checked = gt.includes(c.dataset.rt); });
+  $("#r-cancel").onclick = () => { rulesOpen = false; box.innerHTML = ""; const b = $("#rulesbtn"); if (b) b.setAttribute("aria-expanded", "false"); };
+  $("#rulesf").onsubmit = async e => {
+    e.preventDefault();
+    const types = [...box.querySelectorAll("[data-rt]")].filter(c => c.checked).map(c => c.dataset.rt);
+    if (!$("#r-global").checked && !types.length) return toast("Pick at least one release type");
+    const triv = v => v === "" ? null : v === "1";
+    const body = { release_types: $("#r-global").checked ? null : types.join(","), include_secondary: triv($("#r-sec").value),
+                   auto_download: triv($("#r-auto").value), monitor: $("#r-mon").value };
+    $("#r-save").disabled = true;
+    try {
+      const r = await api("/api/artists/" + a.id, { method: "PATCH", body });
+      toast(r.changed ? `Saved · ${r.changed} release${r.changed === 1 ? "" : "s"} re-sorted` : "Saved");
+      rulesOpen = false; render(true);
+    } catch (err) { toast(err.message); $("#r-save").disabled = false; }
+  };
+}
 function albumActions(a) {
   const s = effStatus(a), b = (act, label, cls = "") => `<button class="btn sm ${cls}" data-act="${act}" data-id="${a.id}">${label}</button>`;
   const out = [];
   if (!can("downloads")) return "";
-  if (["missing", "skipped"].includes(s) && (s !== "skipped" || isAdmin())) out.push(b("download", "Download", "primary"));
+  if (["missing", "skipped"].includes(s) && (s !== "skipped" || isAdmin() || a.skip_reason === "before_follow")) out.push(b("download", "Download", "primary"));
   if (["not_found", "failed"].includes(s)) out.push(b("retry", "Search again", "primary"));
   if (s === "wanted") out.push(b("retry", "Search now"));
   if (s === "downloading") out.push(b("next_source", "Try another source"));
@@ -611,7 +803,7 @@ function albumActions(a) {
   if (["missing", "not_found", "wanted", "skipped", "upcoming"].includes(s)) out.push(b("recheck", "I have this", "ghost"));
   return out.join("");
 }
-function albumRow(a) {
+function albumRow(a, withArtist = false) {
   const s = effStatus(a);
   const kind = [a.primary_type, ...(a.secondary_types || [])].filter(Boolean).join(" · ");
   const tc = a.track_count ? ` · ${a.track_count} tracks` : "";
@@ -622,13 +814,13 @@ function albumRow(a) {
   if (s === "not_found" && a.next_retry) detail += ` <span class="sub">(next try ${ago(a.next_retry)})</span>`;
   const prog = s === "downloading" ? `<div class="prog"><i style="width:${a.progress || 0}%"></i></div>` : "";
   return `<div class="album ${s === "skipped" ? "dim" : ""}">${cover(a.mbid, a.title, 250)}
-    <div style="min-width:0"><div class="t">${esc(a.title)}</div>
+    <div style="min-width:0"><div class="t">${withArtist ? `<a href="#/artist/${a.artist_id}">${esc(a.artist_name)}</a> — ` : ""}${esc(a.title)}</div>
       <div class="m">${esc(a.year || "—")} · ${esc(kind)}${tc}</div>
       <div class="d">${detail}</div>${prog}</div>
     <div class="right"><div class="acts">${albumActions(a)}</div>${pill(a)}</div></div>`;
 }
-function bindAlbumActions() {
-  view.querySelectorAll("[data-act]").forEach(b => b.onclick = async () => {
+function bindAlbumActions(root = view) {
+  root.querySelectorAll("[data-act]").forEach(b => b.onclick = async () => {
     b.disabled = true;
     try {
       const r = await api(`/api/albums/${b.dataset.id}/${b.dataset.act}`, { method: "POST" });
@@ -696,6 +888,7 @@ function importArt(r, alt) {
 function altLabel(a) {
   return [a.name, a.disambiguation, a.country, a.begin && a.begin.slice(0, 4)].filter(Boolean).join(" · ");
 }
+const importOpts = { auto: false, onlyNew: false };
 async function viewImport(first) {
   const d = await api("/api/import");
   clearTimeout(importPoll);
@@ -736,7 +929,8 @@ async function viewImport(first) {
       : `<div class="list"><div class="empty">${importTab === "new" ? (busy ? "Matches will appear here…" : "Nothing new to add.") : importTab === "none" ? "Every artist was matched." : "None yet."}</div></div>`;
     if (importTab === "new" && groups.new.length) {
       body += `<div class="addbar"><span class="sub" id="icount" style="margin-right:auto"></span>
-        <label title="Off: albums you don't have are listed under Missing albums for you to pick. On: Crate starts downloading them right away."><input type="checkbox" id="iauto"> Download missing albums automatically</label>
+        <label title="Off: albums you don't have are listed under Missing albums for you to pick. On: Crate starts downloading them right away."><input type="checkbox" id="iauto" ${importOpts.auto ? "checked" : ""}> Download missing albums automatically</label>
+        <label title="Older albums you're missing are skipped (you can still download them by hand); only releases from now on are fetched."><input type="checkbox" id="inew" ${importOpts.onlyNew ? "checked" : ""}> Only new releases</label>
         <button class="btn primary" id="iadd">Add artists</button></div>`;
     }
   }
@@ -768,6 +962,8 @@ async function viewImport(first) {
     row.querySelector(".mb .d").textContent = info && info.albums && info.albums.length ? "Releases: " + info.albums.map(x => x.title).join(", ") : "";
   });
   const add = $("#iadd");
+  if ($("#iauto")) $("#iauto").onchange = e => { importOpts.auto = e.target.checked; };
+  if ($("#inew")) $("#inew").onchange = e => { importOpts.onlyNew = e.target.checked; };
   if (add) {
     importCount(groups.new);
     add.onclick = async () => {
@@ -775,9 +971,9 @@ async function viewImport(first) {
       if (!items.length) return toast("Tick the artists you want to add");
       add.disabled = true;
       try {
-        const auto = $("#iauto").checked;
-        const res = await api("/api/import/add", { method: "POST", body: { items, auto_download: auto } });
-        toast(`Added ${res.result.added} artist${res.result.added === 1 ? "" : "s"}. ${auto ? "Missing albums will start downloading." : "Fetching discographies; then pick what to download."}`);
+        const auto = $("#iauto").checked, onlyNew = $("#inew").checked;
+        const res = await api("/api/import/add", { method: "POST", body: { items, auto_download: auto, only_new: onlyNew } });
+        toast(`Added ${res.result.added} artist${res.result.added === 1 ? "" : "s"}. ${onlyNew ? "Only new releases will be fetched." : auto ? "Missing albums will start downloading." : "Fetching discographies; then pick what to download."}`);
         importTab = "done"; viewImport(true);
       } catch (e) { toast(e.message); add.disabled = false; }
     };

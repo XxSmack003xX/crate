@@ -11,10 +11,15 @@
 import os
 import threading
 from collections import Counter
+from datetime import datetime, timezone
 
 from .db import now_iso
 from .library import _tags, guess_artist_album
 from .matcher import AUDIO_EXT, DISC_RE, normalize, strip_extras
+
+
+def _today():
+    return datetime.now(timezone.utc).date().isoformat()
 
 SKIP_ARTISTS = {"various artists", "various", "va", "v a", "unknown artist", "unknown", "soundtrack",
                 "soundtracks", "compilations", "compilation", "misc", "singles", "downloads", "music"}
@@ -174,9 +179,14 @@ class LibraryImporter:
                     "adding": self.adding, "counts": dict(counts), "results": results}
 
     # ------------------------------------------------------------------ add
-    def add(self, items, auto_download=False):
-        """items: [{"id": result id, "mbid": chosen MusicBrainz id}]"""
+    def add(self, items, auto_download=False, only_new=False):
+        """items: [{"id": result id, "mbid": chosen MusicBrainz id}]
+
+        only_new: follow new releases only; older albums you're missing are skipped
+        (you can still download any of them by hand)."""
         added, skipped, ids = [], 0, []
+        monitor = "new" if only_new else "all"
+        since = _today() if only_new else None
         with self.lock:
             for it in items or []:
                 res = self.results.get(it.get("id"))
@@ -185,7 +195,16 @@ class LibraryImporter:
                     skipped += 1
                     continue
                 choice = next((a for a in res["alternatives"] if a["mbid"] == mbid), None)
-                existing = self.app.db.one("SELECT id FROM artists WHERE mbid = ?", (mbid,))
+                existing = self.app.db.one("SELECT id, name, followed FROM artists WHERE mbid = ?", (mbid,))
+                if existing and existing.get("followed") == 0:  # had one-off requests only: follow it now
+                    self.app.db.x("UPDATE artists SET followed = 1, monitor = ?, monitor_since = ?, "
+                                  "local_name = COALESCE(local_name, ?), auto_download = ?, last_synced = NULL "
+                                  "WHERE id = ?", (monitor, since, res["local_name"],
+                                                   1 if auto_download else 0, existing["id"]))
+                    res.update(status="added", artist_id=existing["id"], selected=False)
+                    added.append(existing["name"])
+                    ids.append(existing["id"])
+                    continue
                 if existing:
                     res.update(status="following", artist_id=existing["id"], selected=False)
                     if res["local_name"]:
@@ -198,16 +217,18 @@ class LibraryImporter:
                     continue
                 aid = self.app.db.x(
                     "INSERT INTO artists (mbid, name, sort_name, disambiguation, country, added_at, sync_status, "
-                    "local_name, auto_download) VALUES (?,?,?,?,?,?, 'pending', ?, ?)",
+                    "local_name, auto_download, monitor, monitor_since) VALUES (?,?,?,?,?,?, 'pending', ?, ?, ?, ?)",
                     (mbid, choice["name"], choice.get("sort_name"), choice.get("disambiguation"),
-                     choice.get("country"), now_iso(), res["local_name"], 1 if auto_download else 0))
+                     choice.get("country"), now_iso(), res["local_name"], 1 if auto_download else 0,
+                     monitor, since))
                 res.update(status="added", artist_id=aid, selected=False)
                 added.append(choice["name"])
                 ids.append(aid)
         if ids:
             self.app.db.event(
                 f"Imported {len(ids)} artist(s) from your library"
-                + ("" if auto_download else "; missing albums will wait for you to click Download"))
+                + ("; only new releases will be fetched" if only_new else
+                   "" if auto_download else "; missing albums will wait for you to click Download"))
             threading.Thread(target=self._sync_all, args=(ids,), daemon=True, name="import-sync").start()
         return {"added": len(ids), "skipped": skipped, "names": added}
 

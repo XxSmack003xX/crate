@@ -25,6 +25,7 @@ Add an artist and Crate pulls their full list of releases from MusicBrainz. It c
 - [Running without Docker](#running-without-docker)
 - [Accounts and permissions](#accounts-and-permissions)
 - [Using Crate](#using-crate)
+- [Choosing what to fetch](#choosing-what-to-fetch)
 - [Importing the music you already have](#importing-the-music-you-already-have)
 - [How Crate picks a download](#how-crate-picks-a-download)
 - [Duplicate scanner](#duplicate-scanner)
@@ -41,6 +42,8 @@ Add an artist and Crate pulls their full list of releases from MusicBrainz. It c
 - **Import your existing collection.** Crate scans your music folder, finds the artists in it, matches each one on MusicBrainz, and lets you add them all at once. It then lists the albums you're missing, so you choose what to download.
 - **Follow artists.** Search MusicBrainz from the web UI. Each result shows the artist's photo (from Wikidata) or album art, plus a few of their albums, so you can pick the right artist when several share a name.
 - **Full discographies.** Crate gets every release from MusicBrainz. You choose which types to follow: albums and EPs by default. Singles, live albums and compilations are skipped unless you turn them on, and you can always download or skip individual releases.
+- **Rules per artist.** Each artist can have its own release types, include or leave out live albums and compilations, and turn auto-download on or off. Follow **only new releases** to skip an artist's back catalogue.
+- **One-off albums.** Search for an album and get just that one, without following the artist. You can follow them later.
 - **Never downloads what you already have.** Crate scans your music folder, using folder names and, when available, tags, and marks matching albums **In library**.
 - **Smart source picking.** Folders that are incomplete, at too low a bitrate, or have a tracklist that doesn't match the album are rejected. Of the rest, Crate prefers your best format, a free upload slot and a fast connection. If a source fails or stalls, it moves to the next one automatically.
 - **Tidy library.** Finished albums are moved to `Artist/Album (Year)/`, with multi-disc albums kept in their `CD1`/`CD2` folders and the cover image included. You can change the folder layout.
@@ -287,16 +290,44 @@ Behind an HTTPS reverse proxy, cookies are marked `Secure` automatically when th
 
 | Page | What you can do |
 |---|---|
-| **Artists** | Search and add artists, see how complete each discography is, **Rescan library** after adding music by hand, and **Import from library**. A banner links to **Missing albums** when there are albums waiting for you to choose. |
+| **Artists** | Search and add artists (**All releases** or **Only new releases**), or switch the search to **Albums** to get a single album. Filter and sort your artists (name, recently added, most missing, downloading, least complete); big libraries show 200 at a time with **Show more**. **Requested albums** lists one-off albums. **Rescan library** after adding music by hand, and **Import from library**. A banner links to **Missing albums** when there are albums waiting for you to choose. |
 | **Import from library** | Follow the artists already in your music folder. See [below](#importing-the-music-you-already-have). |
 | **Missing albums** | Albums by artists you follow that you don't have and that aren't set to download, grouped by artist. **Download** one, **Download all** for an artist, **Download all** overall, or **Skip**. |
-| **Artist page** | Tabs for Albums, EPs, Singles and Other. **Download all missing**, **Refresh discography**, and per-release **Download**, **Skip**, **Search again**, **Try another source** and **I have this** (re-checks your library for that album). |
+| **Artist page** | Tabs for Albums, EPs, Singles and Other. **Download all missing**, **Refresh discography**, **What to fetch…** (admins, see [below](#choosing-what-to-fetch)), and per-release **Download**, **Skip**, **Search again**, **Try another source** and **I have this** (re-checks your library for that album). Artists you only requested albums from show a **Follow artist** button. |
 | **Queue** | Everything searching or downloading, with live progress, plus what's waiting or not found. **Clear slskd searches** deletes finished searches from slskd's Searches page; running searches are kept. |
 | **Duplicates** | Find and clean up albums and songs you have more than once, on the **Albums** and **Songs** tabs. See [Duplicate scanner](#duplicate-scanner). |
 | **Activity** | A log of everything Crate did and why: which source it picked, which ones failed, what was imported, connection problems. |
 | **Settings** | **General:** connection, folders, release types, formats and bitrate, how many searches and downloads run at once, timeouts, and what happens to removed duplicates. **Users:** add people and set what they can do. **Updates:** see the latest release and install it. Admins only. |
 
 Removing an artist never deletes files from disk.
+
+## Choosing what to fetch
+
+**Global rules** live in **Settings → General**: which release types to follow (albums and EPs by default), which secondary types to skip (live, compilation, remix…), and whether to download automatically.
+
+**Per artist:** on an artist's page, admins click **What to fetch…** to override them for that artist:
+
+| Setting | Options |
+|---|---|
+| Release types | Same as Settings, or pick Albums, EPs, Singles, Broadcasts, Other |
+| Live, compilations, remixes | Same as Settings (leave out), Include them, Leave them out |
+| Download automatically | Same as Settings, On, Off (you pick from **Missing albums**) |
+| Fetch | The whole discography, or **Only new releases** (from today) |
+
+**What changing a rule touches:**
+- Saving re-sorts the artist's **missing** and **rule-skipped** albums right away. Changing the global release types re-sorts every artist that uses them.
+- Albums you have, downloads in progress, albums someone asked for, and albums you skipped by hand are never changed.
+
+**Only new releases:**
+- Albums released before you followed are marked **Skipped** ("released before you followed"). Upcoming albums are still fetched.
+- Anyone who can download can still **Download** a skipped older album.
+- Choose it when adding an artist (**When adding: Only new releases**), when importing (**Only new releases**), or later from **What to fetch…**.
+
+**One-off albums:**
+- Switch the Artists search to **Albums**, find the album, and click **Get album**. Crate downloads just that album and doesn't follow the artist or pull in their other releases.
+- The artist gets a page with only the albums you requested, and those albums are listed under **Requested albums** on the Artists page.
+- **Follow artist** on that page starts following them normally, and your requests are kept.
+- Users need **Download albums** permission, and each request counts towards their daily limit.
 
 ## Importing the music you already have
 
@@ -311,7 +342,7 @@ Removing an artist never deletes files from disk.
    - **Check this**: same-name artists, or only a rough match. Not ticked; use the dropdown to choose the right artist.
    - **No match**: nothing found. Rename the folder, or add the artist from the Artists search.
 3. **Review and add.** Untick anyone you don't want, change a match with the dropdown, then click **Add N artists**. Matching runs at about one artist every two seconds (MusicBrainz's rate limit), and you can start reviewing while it works.
-4. **Choose what to download.** Imported artists **don't auto-download** unless you tick *Download missing albums automatically*. Albums you already have show as **In library**, and the rest go to **Missing albums**, where you can download them one at a time, per artist, or all at once.
+4. **Choose what to download.** Imported artists **don't auto-download** unless you tick *Download missing albums automatically*. Tick *Only new releases* to skip their back catalogue and only fetch what comes out from now on. Albums you already have show as **In library**, and the rest go to **Missing albums**, where you can download them one at a time, per artist, or all at once.
 
 ![Missing albums](docs/screenshots/missing.png)
 
@@ -328,7 +359,7 @@ Crate remembers each artist's folder name, so albums stored under a different sp
 | Downloading | Shows progress, or "Waiting in X's upload queue" |
 | Not found | No good source yet; it will be retried automatically |
 | Failed | The download finished but couldn't be imported (usually the downloads-folder setting) |
-| Skipped | A release type you don't follow, or one you skipped |
+| Skipped | A release type you don't follow, released before you followed (new releases only), or one you skipped |
 | Missing | Not in your library and not set to download, e.g. from an imported artist, or with auto-download off. Listed under **Missing albums**; click **Download** |
 | Upcoming | The release date is in the future; it will be searched once it's out |
 
@@ -522,6 +553,8 @@ tests/
   test_song_dupes.py duplicate songs test
   test_auth.py       sign-in, roles, permissions, limits
   test_updater.py    updates against a fake Docker engine (success + rollback)
+  test_rules.py      per-artist rules, new releases only, one-off album requests
+  bench_artists.py   Artists page speed with a big library (python3 tests/bench_artists.py 5000)
   fake_docker.py     in-memory Docker Engine API
 ```
 
