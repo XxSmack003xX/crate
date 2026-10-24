@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.request
 from collections import Counter
 
-VERSION = "1.2"
+VERSION = "1.3"
 # MusicBrainz allows ~1 request/second per client.
 MIN_INTERVAL = float(os.environ.get("CRATE_MB_INTERVAL", "1.1"))
 

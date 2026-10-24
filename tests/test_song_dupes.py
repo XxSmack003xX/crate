@@ -62,12 +62,16 @@ httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
 threading.Thread(target=httpd.serve_forever, daemon=True).start()
 base = f"http://127.0.0.1:{httpd.server_address[1]}"
 
+sys.path.insert(0, os.path.join(ROOT, "tests"))
+from client import login_opener  # noqa: E402
+OPENER = login_opener(base)
+
 
 def api(method, path, body=None):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(base + path, data=data, method=method, headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with OPENER.open(req, timeout=30) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
         return {"_status": e.code, **json.loads(e.read())}

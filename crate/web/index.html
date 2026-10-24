@@ -162,6 +162,66 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: v
 .row .t a { text-decoration: none; font-weight: 650; }
 .row .t a:hover { text-decoration: underline; }
 /* duplicates */
+/* sign-in */
+.auth-wrap { min-height: calc(100vh - 40px); display: grid; place-items: center; padding: 20px 0; }
+.auth-card { width: min(400px, 100%); background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+  padding: 28px 26px; box-shadow: var(--shadow); }
+.auth-card .logo { font-size: 24px; margin-bottom: 18px; }
+.auth-card .disc { width: 30px; height: 30px; }
+.auth-card h1 { font-size: 22px; margin-bottom: 4px; }
+.auth-card label { display: block; font-weight: 600; font-size: 14px; margin: 14px 0 6px; }
+.auth-card input { width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); outline: none; font-size: 15px; }
+.auth-card input:focus { border-color: var(--accent); }
+.auth-card .btn { width: 100%; margin-top: 20px; padding: 10px; font-size: 15px; }
+.auth-err { color: var(--bad); font-size: 13.5px; margin-top: 12px; min-height: 1em; }
+/* user menu */
+.umenu { position: relative; }
+.ubtn { display: flex; align-items: center; gap: 8px; background: none; border: 1px solid transparent; border-radius: 99px; padding: 3px 10px 3px 3px; cursor: pointer; }
+.ubtn:hover { background: var(--bg2); }
+.avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 12.5px;
+  background: color-mix(in srgb, var(--accent) 22%, var(--card)); color: var(--accent); flex: none; }
+.ubtn .un { font-size: 13.5px; font-weight: 600; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.udrop { position: absolute; right: 0; top: calc(100% + 6px); min-width: 230px; background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: var(--shadow); padding: 8px; z-index: 30; }
+.udrop .who { padding: 8px 10px 10px; border-bottom: 1px solid var(--line); margin-bottom: 6px; font-size: 13px; color: var(--muted); }
+.udrop .who b { display: block; color: var(--ink); font-size: 14.5px; }
+.udrop button, .udrop a { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 8px 10px; border-radius: 8px;
+  cursor: pointer; font-size: 14px; text-decoration: none; }
+.udrop button:hover, .udrop a:hover { background: var(--bg2); }
+.pwbox { display: grid; gap: 8px; padding: 6px 4px; }
+.pwbox input { padding: 7px 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); }
+/* users + updates */
+.utable { width: 100%; border-collapse: collapse; font-size: 14px; }
+.utable th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 8px 10px; font-weight: 700; }
+.utable td { padding: 10px; border-top: 1px solid var(--line); vertical-align: middle; }
+.utable select, .utable input[type=number] { padding: 5px 7px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); }
+.utable input[type=number] { width: 72px; }
+.utable .perm { display: flex; gap: 12px; flex-wrap: wrap; }
+.utable .perm label { display: flex; gap: 5px; align-items: center; white-space: nowrap; }
+.newuser { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; align-items: end; }
+.newuser label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; }
+.newuser label { min-width: 0; }
+.newuser input, .newuser select { width: 100%; min-width: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+.notes h4 { margin: 10px 0 4px; font-size: 14.5px; } .notes h4:first-child { margin-top: 0; }
+.notes ul { margin: 4px 0 8px; padding-left: 20px; } .notes p { margin: 4px 0 8px; }
+.notes code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; background: var(--bg2); padding: 1px 5px; border-radius: 5px; }
+.ver { font-size: 30px; font-weight: 800; letter-spacing: -.02em; }
+.notes { font-size: 13.5px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 14px; max-height: 320px; overflow: auto; margin-top: 10px; }
+.code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; word-break: break-all; }
+.overlay { position: fixed; inset: 0; z-index: 60; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px);
+  display: grid; place-items: center; padding: 20px; }
+.overlay .box { text-align: center; max-width: 460px; }
+.spin { width: 42px; height: 42px; border-radius: 50%; border: 4px solid var(--line); border-top-color: var(--accent); margin: 0 auto 18px;
+  animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 720px) {
+  .utable thead { display: none; }
+  .utable tr { display: grid; gap: 6px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .utable td { border: 0; padding: 2px 4px; }
+  .ubtn .un { display: none; }
+}
 /* import + missing */
 .prog.big { height: 6px; max-width: none; margin: 14px 0 6px; }
 .prog.big i { background: var(--accent); }
@@ -271,17 +331,21 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: v
 </style>
 </head>
 <body>
-<header>
+<header id="hdr" hidden>
   <div class="bar">
     <a class="logo" href="#/"><span class="disc"></span>Crate</a>
     <nav id="nav">
       <a href="#/" data-v="artists">Artists</a>
       <a href="#/queue" data-v="queue">Queue <span class="badge" id="qbadge" hidden></span></a>
-      <a href="#/duplicates" data-v="duplicates">Duplicates</a>
+      <a href="#/duplicates" data-v="duplicates" data-admin>Duplicates</a>
       <a href="#/activity" data-v="activity">Activity</a>
-      <a href="#/settings" data-v="settings">Settings</a>
+      <a href="#/settings" data-v="settings" data-admin>Settings</a>
     </nav>
     <a class="conn" id="conn" href="#/settings" title=""><span class="dot"></span><span>Checking slskd…</span></a>
+    <div class="umenu" id="umenu" hidden>
+      <button class="ubtn" id="ubtn" aria-haspopup="true"><span class="avatar" id="uav"></span><span class="un" id="uname"></span></button>
+      <div class="udrop" id="udrop" hidden></div>
+    </div>
   </div>
 </header>
 <main id="view"></main>
@@ -293,11 +357,16 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const view = $("#view");
 let status = null, timer = null, route = "";
 
+let me = null;
+const isAdmin = () => !!me && me.role === "admin";
+const can = p => isAdmin() || !!(me && me.perms && me.perms[p]);
 async function api(path, opts = {}) {
-  const r = await fetch(path, { method: opts.method || "GET",
-    headers: opts.body ? {"Content-Type": "application/json"} : {},
+  const headers = { "X-Crate": "1" };
+  if (opts.body) headers["Content-Type"] = "application/json";
+  const r = await fetch(path, { method: opts.method || "GET", headers, credentials: "same-origin",
     body: opts.body ? JSON.stringify(opts.body) : undefined });
   const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && data.login && !opts.noRedirect) { signedOut("Your session ended. Sign in again."); throw new Error("Sign in to continue."); }
   if (!r.ok) throw new Error(data.error || r.statusText);
   return data;
 }
@@ -364,9 +433,12 @@ async function refreshStatus() {
 }
 function banner() {
   if (!status) return "";
-  if (!status.configured) return `<div class="banner"><div style="flex:1"><b>Connect slskd to start downloading.</b> Add your slskd address and API key in Settings.</div><a class="btn primary" href="#/settings">Open Settings</a></div>`;
-  if (status.slskd && status.slskd.ok === false) return `<div class="banner bad"><div style="flex:1"><b>Can't use slskd right now.</b> ${esc(status.slskd.message)}</div><a class="btn" href="#/settings">Settings</a></div>`;
-  return "";
+  let out = "";
+  if (status.update && isAdmin()) out += `<div class="banner"><div style="flex:1"><b>Crate ${esc(status.update.version)} is available.</b> You have ${esc(status.version)}.</div><a class="btn primary" href="#/settings/updates">See what's new</a></div>`;
+  if (!status.configured) out += isAdmin() ? `<div class="banner"><div style="flex:1"><b>Connect slskd to start downloading.</b> Add your slskd address and API key in Settings.</div><a class="btn primary" href="#/settings">Open Settings</a></div>`
+    : `<div class="banner"><div style="flex:1"><b>Downloads aren't set up yet.</b> An admin needs to connect slskd.</div></div>`;
+  else if (status.slskd && status.slskd.ok === false) out += `<div class="banner bad"><div style="flex:1"><b>Can't use slskd right now.</b> ${esc(status.slskd.message)}</div>${isAdmin() ? `<a class="btn" href="#/settings">Settings</a>` : ""}</div>`;
+  return out;
 }
 
 /* ---------------- artists list ---------------- */
@@ -377,9 +449,9 @@ async function viewArtists(first) {
     view.innerHTML = `
       <div id="ban"></div>
       <div class="toolbar"><h1 class="grow">Your artists</h1>
-        <button class="btn ghost" id="rescan" title="Look for albums you already have on disk">Rescan library</button>
-        <a class="btn" href="#/import" title="Find the artists already in your music folder and follow them">Import from library</a></div>
-      <div class="addbox">
+        ${isAdmin() ? `<button class="btn ghost" id="rescan" title="Look for albums you already have on disk">Rescan library</button>
+        <a class="btn" href="#/import" title="Find the artists already in your music folder and follow them">Import from library</a>` : ""}</div>
+      <div class="addbox" ${can("artists") ? "" : "hidden"}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input id="q" placeholder="Add an artist — search MusicBrainz…" autocomplete="off">
         <div class="results" id="res" hidden></div>
@@ -391,7 +463,7 @@ async function viewArtists(first) {
     q.addEventListener("keydown", e => { if (e.key === "Escape") { res.hidden = true; q.blur(); } });
     document.addEventListener("click", e => { if (!e.target.closest(".addbox")) res.hidden = true; });
     q.addEventListener("focus", () => { if (res.innerHTML) res.hidden = false; });
-    $("#rescan").onclick = async e => {
+    if ($("#rescan")) $("#rescan").onclick = async e => {
       e.target.disabled = true;
       try { const r = await api("/api/library/rescan", { method: "POST" }); toast(`Scanned ${r.folders} album folders · ${r.matched} matched`); render(); }
       catch (err) { toast(err.message); } finally { e.target.disabled = false; }
@@ -502,10 +574,10 @@ async function viewArtist(id, first) {
           ${syncing ? `<span class="sub" style="display:flex;gap:6px;align-items:center"><span class="pulse"></span>Fetching discography from MusicBrainz…</span>` : ""}
         </div>
         <div class="actions">
-          ${a.missing ? `<button class="btn primary" id="dlall">Download all missing</button>` : ""}
-          <button class="btn" id="sync">Refresh discography</button>
+          ${a.missing && can("downloads") ? `<button class="btn primary" id="dlall">Download all missing</button>` : ""}
+          ${can("artists") ? `<button class="btn" id="sync">Refresh discography</button>` : ""}
           <a class="btn ghost" href="https://musicbrainz.org/artist/${esc(a.mbid)}" target="_blank" rel="noopener">MusicBrainz ↗</a>
-          <button class="btn ghost danger" id="del">Remove artist</button>
+          ${isAdmin() ? `<button class="btn ghost danger" id="del">Remove artist</button>` : ""}
         </div>
       </div>
     </div>
@@ -517,9 +589,9 @@ async function viewArtist(id, first) {
     <div class="albums">${list.length ? list.map(albumRow).join("") : `<div class="blank">${syncing ? "Loading releases…" : "Nothing here."}</div>`}</div>`;
   view.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { artistTab = b.dataset.tab; render(true); });
   const skp = $("#skp"); if (skp) skp.onchange = () => { showSkipped = skp.checked; render(true); };
-  $("#sync").onclick = async () => { await api(`/api/artists/${id}/sync`, { method: "POST" }); toast("Checking MusicBrainz for new releases"); setTimeout(render, 600); };
-  const dl = $("#dlall"); if (dl) dl.onclick = async () => { const r = await api(`/api/artists/${id}/download-all`, { method: "POST" }); toast(`${r.count} release(s) queued`); render(); };
-  $("#del").onclick = async () => {
+  if ($("#sync")) $("#sync").onclick = async () => { await api(`/api/artists/${id}/sync`, { method: "POST" }); toast("Checking MusicBrainz for new releases"); setTimeout(render, 600); };
+  const dl = $("#dlall"); if (dl) dl.onclick = async () => { try { const r = await api(`/api/artists/${id}/download-all`, { method: "POST" }); toast(r.message || `${r.count} release(s) queued`); } catch (e) { toast(e.message); } render(); };
+  if ($("#del")) $("#del").onclick = async () => {
     const b = $("#del");
     if (b.dataset.confirm !== "1") { b.dataset.confirm = "1"; b.textContent = "Click again to remove"; setTimeout(() => { b.dataset.confirm = ""; b.textContent = "Remove artist"; }, 3000); return; }
     await api("/api/artists/" + id, { method: "DELETE" }); toast(`Removed ${a.name}. Files on disk were kept.`); location.hash = "#/";
@@ -529,12 +601,13 @@ async function viewArtist(id, first) {
 function albumActions(a) {
   const s = effStatus(a), b = (act, label, cls = "") => `<button class="btn sm ${cls}" data-act="${act}" data-id="${a.id}">${label}</button>`;
   const out = [];
-  if (["missing", "skipped"].includes(s)) out.push(b("download", "Download", "primary"));
+  if (!can("downloads")) return "";
+  if (["missing", "skipped"].includes(s) && (s !== "skipped" || isAdmin())) out.push(b("download", "Download", "primary"));
   if (["not_found", "failed"].includes(s)) out.push(b("retry", "Search again", "primary"));
   if (s === "wanted") out.push(b("retry", "Search now"));
   if (s === "downloading") out.push(b("next_source", "Try another source"));
   if (["have"].includes(s) && a.status_detail !== "Already in your library") out.push(b("retry", "Re-download", "ghost"));
-  if (!["skipped", "have"].includes(s)) out.push(b("skip", "Skip", "ghost"));
+  if (!["skipped", "have"].includes(s) && isAdmin()) out.push(b("skip", "Skip", "ghost"));
   if (["missing", "not_found", "wanted", "skipped", "upcoming"].includes(s)) out.push(b("recheck", "I have this", "ghost"));
   return out.join("");
 }
@@ -594,7 +667,7 @@ async function viewQueue(first) {
     <div class="right" style="display:flex;gap:8px;align-items:center"><div style="display:flex;gap:4px">${albumActions(a)}</div>${pill(a)}</div></div>`;
   const waiting = q.waiting.filter(a => effStatus(a) !== "upcoming");
   view.innerHTML = `${banner()}<div class="toolbar"><h1 class="grow">Queue</h1>
-      <button class="btn" data-clear-searches title="Remove finished searches from slskd's Searches page. Running searches are kept.">Clear slskd searches</button></div>
+      ${isAdmin() ? `<button class="btn" data-clear-searches title="Remove finished searches from slskd's Searches page. Running searches are kept.">Clear slskd searches</button>` : ""}</div>
     <h2>In progress · ${q.active.length}</h2>
     ${q.active.length ? `<div class="list">${q.active.map(row).join("")}</div>` : `<div class="list"><div class="empty">Nothing downloading right now.</div></div>`}
     <h2>Waiting · ${waiting.length}</h2>
@@ -758,7 +831,7 @@ async function viewMissing(first) {
         <span class="sub" style="font-size:13px">${g.albums.length} missing</span><span class="sp"></span>
         ${g.albums.length > 1 ? `<button class="btn sm" data-mart="${g.artist_id}">Download all ${g.albums.length}</button>` : ""}</div>
         <div>${g.albums.map(row).join("")}</div></div>`).join("")
-      : `<div class="blank"><div class="big">Nothing missing</div>Every album from the artists you follow is in your library, downloading, or skipped.<br><br><a class="btn" href="#/import">Import from library</a></div>`}`;
+      : `<div class="blank"><div class="big">Nothing missing</div>Every album from the artists you follow is in your library, downloading, or skipped.${isAdmin() ? `<br><br><a class="btn" href="#/import">Import from library</a>` : ""}</div>`}`;
   const go = async (body, b) => {
     b.disabled = true;
     try { const r = await api("/api/missing/download", { method: "POST", body }); toast(`${r.queued} album${r.queued === 1 ? "" : "s"} queued to download`); refreshStatus(); viewMissing(true); }
@@ -936,12 +1009,27 @@ async function viewActivity(first) {
 
 /* ---------------- settings ---------------- */
 const TYPES = ["Album", "EP", "Single", "Broadcast", "Other"];
-async function viewSettings() {
+let settingsTab = "general";
+async function viewSettings(sub) {
+  if (!isAdmin()) { view.innerHTML = `<div class="blank"><div class="big">Admins only</div>Ask an admin to change settings.</div>`; return; }
+  if (sub) settingsTab = sub;
+  if (settingsTab === "users") return viewUsers();
+  if (settingsTab === "updates") return viewUpdates();
+  return viewGeneral();
+}
+function settingsTabs() {
+  return `<div class="tabs" style="margin-top:14px">${[["general", "General"], ["users", "Users"], ["updates", "Updates"]].map(([k, l]) =>
+    `<button data-stab="${k}" class="${k === settingsTab ? "on" : ""}">${l}</button>`).join("")}</div>`;
+}
+function bindSettingsTabs() {
+  view.querySelectorAll("[data-stab]").forEach(b => b.onclick = () => { location.hash = b.dataset.stab === "general" ? "#/settings" : "#/settings/" + b.dataset.stab; });
+}
+async function viewGeneral() {
   const s = await api("/api/settings");
   const types = s.release_types.split(",").map(x => x.trim().toLowerCase());
   const f = (key, label, hint, type = "text", extra = "") => `<div class="field"><label for="f-${key}">${label}</label>
     <input id="f-${key}" name="${key}" type="${type}" value="${esc(s[key])}" ${extra}>${hint ? `<div class="hint">${hint}</div>` : ""}</div>`;
-  view.innerHTML = `<h1>Settings</h1><p class="sub">Changes take effect immediately after saving.</p>
+  view.innerHTML = `<h1>Settings</h1>${settingsTabs()}<p class="sub">Changes take effect immediately after saving.</p>
   <form class="form" id="sf" autocomplete="off">
     <div class="fs"><h3>slskd connection</h3><p>Create an API key in slskd's config (<span class="mono">web.authentication.api_keys</span>) and paste it here.</p>
       ${f("slskd_url", "slskd address", "e.g. http://localhost:5030 or http://slskd:5030 in Docker")}
@@ -983,6 +1071,7 @@ async function viewSettings() {
     </div>
     <div class="savebar"><span class="sub" id="savemsg" style="margin-right:auto"></span><button class="btn primary" type="submit">Save settings</button></div>
   </form>`;
+  bindSettingsTabs();
   const form = $("#sf");
   const collect = () => {
     const out = {};
@@ -1012,10 +1101,164 @@ async function viewSettings() {
   };
 }
 
+/* ---------------- settings: users ---------------- */
+async function viewUsers() {
+  const d = await api("/api/users");
+  const perms = d.perm_labels || {};
+  const row = u => {
+    const self = me && u.id === me.id, admin = u.role === "admin";
+    return `<tr data-uid="${u.id}">
+      <td><b>${esc(u.username)}</b>${self ? ` <span class="tag">you</span>` : ""}
+        <div class="sub" style="font-size:12px">${u.last_login ? "signed in " + ago(u.last_login) : "never signed in"}</div></td>
+      <td><select data-f="role" ${self ? "disabled title='You can't change your own role'" : ""}>
+        <option value="user" ${!admin ? "selected" : ""}>User</option><option value="admin" ${admin ? "selected" : ""}>Admin</option></select></td>
+      <td>${admin ? `<span class="sub">Everything</span>` : `<div class="perm">${Object.entries(perms).map(([k, l]) =>
+        `<label title="Allowed to ${esc(l)}"><input type="checkbox" data-perm="${k}" ${u.perms[k] ? "checked" : ""}> ${esc(l[0].toUpperCase() + l.slice(1))}</label>`).join("")}</div>`}</td>
+      <td>${admin ? `<span class="sub">No limit</span>` : `<input type="number" min="0" data-f="daily_limit" value="${u.daily_limit}" title="Albums this user can queue per day (0 = no limit)">
+        <div class="sub" style="font-size:12px">${u.requested_today} today</div>`}</td>
+      <td style="white-space:nowrap;text-align:right"><button class="btn sm ghost" data-reset>Reset password</button>
+        ${self ? "" : `<button class="btn sm ghost danger" data-del>Remove</button>`}</td></tr>`;
+  };
+  view.innerHTML = `<h1>Settings</h1>${settingsTabs()}
+    <div class="form" style="max-width:none">
+      <div class="fs"><h3>Add a user</h3><p>Admins can do everything. Users can browse and, if allowed, follow artists and download albums, up to their daily limit.</p>
+        <form class="newuser" id="nuf" autocomplete="off">
+          <label>Username<input name="username" required minlength="2" autocomplete="off"></label>
+          <label>Password<input name="password" type="password" required minlength="6" autocomplete="new-password"></label>
+          <label>Role<select name="role"><option value="user">User</option><option value="admin">Admin</option></select></label>
+          <label title="Albums per day; 0 = no limit">Daily album limit<input name="daily_limit" type="number" min="0" value="10"></label>
+          <button class="btn primary" type="submit">Add user</button>
+        </form>
+        <div class="checks" id="nup" style="margin-top:10px">${Object.entries(perms).map(([k, l]) => `<label><input type="checkbox" data-nperm="${k}" checked> Can ${esc(l)}</label>`).join("")}</div>
+      </div>
+      <div class="fs" style="padding:8px 10px"><table class="utable"><thead><tr><th>User</th><th>Role</th><th>Can</th><th>Daily limit</th><th></th></tr></thead>
+        <tbody>${d.users.map(row).join("")}</tbody></table></div>
+      <p class="sub" style="font-size:13px">Locked out? On the server run <span class="mono">docker exec -it crate python -m crate reset-password USERNAME</span>.</p>
+    </div>`;
+  bindSettingsTabs();
+  $("#nuf").onsubmit = async e => {
+    e.preventDefault();
+    const f = new FormData(e.target), body = Object.fromEntries(f.entries());
+    body.daily_limit = +body.daily_limit; body.perms = {};
+    view.querySelectorAll("[data-nperm]").forEach(c => body.perms[c.dataset.nperm] = c.checked);
+    try { const u = await api("/api/users", { method: "POST", body }); toast(`Added ${u.username}`); viewUsers(); } catch (x) { toast(x.message); }
+  };
+  const patch = async (uid, body, okMsg) => {
+    try { await api(`/api/users/${uid}`, { method: "PATCH", body }); toast(okMsg || "Saved"); }
+    catch (x) { toast(x.message); }
+    viewUsers();
+  };
+  view.querySelectorAll("tr[data-uid]").forEach(tr => {
+    const uid = +tr.dataset.uid;
+    const role = tr.querySelector('[data-f="role"]'); if (role) role.onchange = () => patch(uid, { role: role.value }, "Role changed");
+    const lim = tr.querySelector('[data-f="daily_limit"]'); if (lim) lim.onchange = () => patch(uid, { daily_limit: +lim.value }, "Daily limit saved");
+    tr.querySelectorAll("[data-perm]").forEach(c => c.onchange = () => patch(uid, { perms: { [c.dataset.perm]: c.checked } }, "Permissions saved"));
+    tr.querySelector("[data-reset]").onclick = e => {
+      const td = e.target.closest("td");
+      td.innerHTML = `<form style="display:flex;gap:6px;justify-content:flex-end"><input type="password" placeholder="New password" minlength="6" required style="padding:5px 8px;border-radius:7px;border:1px solid var(--line);background:var(--bg);width:150px"><button class="btn sm primary">Set</button></form>`;
+      const form = td.querySelector("form"); form.querySelector("input").focus();
+      form.onsubmit = ev => { ev.preventDefault(); patch(uid, { password: form.querySelector("input").value }, "Password reset. They'll need to sign in again."); };
+    };
+    const del = tr.querySelector("[data-del]");
+    if (del) del.onclick = () => confirmClick(del, async () => {
+      try { await api(`/api/users/${uid}`, { method: "DELETE" }); toast("User removed"); } catch (x) { toast(x.message); }
+      viewUsers();
+    });
+  });
+}
+
+/* ---------------- settings: updates ---------------- */
+async function viewUpdates(fresh) {
+  view.innerHTML = `<h1>Settings</h1>${settingsTabs()}<div class="blank"><span class="pulse"></span> Checking for updates…</div>`;
+  bindSettingsTabs();
+  let st;
+  try { st = await api("/api/update" + (fresh ? "?fresh=1" : "")); } catch (x) { view.querySelector(".blank").textContent = x.message; return; }
+  const L = st.latest, lr = st.last_result;
+  const state = !st.enabled ? `<span class="pill s-skipped">Checks off</span>` : !L ? `<span class="pill s-failed">Couldn't check</span>`
+    : st.update_available ? `<span class="pill s-downloading">Update available</span>` : `<span class="pill s-have">Up to date</span>`;
+  const manual = st.docker ? "docker compose pull\ndocker compose up -d" : "git pull\n# then restart Crate";
+  view.innerHTML = `<h1>Settings</h1>${settingsTabs()}<div class="form">
+    <div class="fs">
+      <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end">
+        <div><div class="sub" style="font-size:13px">Installed</div><div class="ver">${esc(st.current_version)}</div></div>
+        ${L ? `<div><div class="sub" style="font-size:13px">Latest release</div><div class="ver">${esc(L.version)}</div></div>` : ""}
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">${state}<button class="btn" id="ucheck">Check now</button></div>
+      </div>
+      ${st.message ? `<p class="sub" style="margin:12px 0 0">${esc(st.message)}</p>` : ""}
+      ${st.applying ? `<div class="banner" style="margin:14px 0 0"><span class="pulse"></span><div>Updating to ${esc(st.applying.to)}…</div></div>` : ""}
+      ${L ? `<div style="margin-top:16px"><b>${esc(L.name)}</b> <span class="sub">${L.published_at ? "· released " + ago(L.published_at) : ""} · <a href="${esc(L.url)}" target="_blank" rel="noopener">view on GitHub ↗</a></span>
+        ${L.notes ? `<div class="notes">${mdLite(L.notes)}</div>` : ""}</div>` : ""}
+      ${st.update_available ? (st.can_auto_update
+        ? `<div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn primary" id="uapply">Update to ${esc(L.version)}</button>
+            <span class="sub" style="font-size:13px">Crate backs up its database, downloads the new version and restarts. If the new version doesn't start properly, it switches back automatically.</span></div>`
+        : `<div class="banner" style="margin:16px 0 0;display:block"><b>Crate can't update itself here.</b> ${esc(st.reason)}<div class="code" style="margin-top:8px">${esc(manual)}</div></div>`) : ""}
+    </div>
+    ${lr ? `<div class="fs"><h3>Last update</h3><p style="margin:0">${esc(lr.from)} → ${esc(lr.to)} · ${lr.ok ? `<span class="ok">installed</span>` : lr.rolled_back ? `<span class="bad">rolled back</span>, the previous version kept running` : `<span class="bad">failed</span>`} ${lr.at ? "· " + ago(new Date(lr.at * 1000).toISOString()) : ""}</p>
+      ${!lr.ok ? `<p class="sub" style="margin:8px 0 0">${esc(lr.reason || "")}</p>${lr.recovery ? `<div class="code" style="margin-top:8px">${esc(lr.recovery)}</div>` : ""}` : ""}
+      ${lr.log && lr.log.length ? `<details style="margin-top:8px"><summary class="sub" style="cursor:pointer">Details</summary><div class="code" style="margin-top:6px">${esc(lr.log.join("\n"))}</div></details>` : ""}</div>` : ""}
+    <div class="fs"><h3>Update settings</h3>
+      <div class="field"><label for="uen">Check for updates</label><div class="checks"><label><input type="checkbox" id="uen" ${st.enabled ? "checked" : ""}> Check GitHub for new releases every 6 hours and tell admins</label></div></div>
+      <div class="field"><label for="urepo">Release source</label><input id="urepo" type="text" value="${esc(st.repo)}" ${st.repo_locked ? "disabled" : ""} placeholder="owner/repository">
+        <div class="hint">${st.repo_locked ? "Set by the Docker image." : "GitHub repository whose releases Crate follows."}</div></div>
+      <div class="field"><span></span><div class="sub" style="font-size:13px">Running ${st.docker ? `in Docker${st.container ? ` as <span class="mono">${esc(st.container)}</span>` : ""}` : "directly with Python"}.
+        ${st.docker && !st.can_auto_update && !st.update_available ? esc(st.reason) : ""}</div></div>
+    </div></div>`;
+  bindSettingsTabs();
+  $("#ucheck").onclick = () => viewUpdates(true);
+  $("#uen").onchange = async e => { await api("/api/update/config", { method: "POST", body: { enabled: e.target.checked } }); viewUpdates(); };
+  const repo = $("#urepo"); if (!st.repo_locked) repo.onchange = async () => { try { await api("/api/update/config", { method: "POST", body: { repo: repo.value } }); viewUpdates(true); } catch (x) { toast(x.message); } };
+  const ap = $("#uapply");
+  if (ap) ap.onclick = () => confirmClick(ap, async () => {
+    ap.disabled = true; ap.textContent = "Downloading the new version…";
+    try { const r = await api("/api/update/apply", { method: "POST" }); waitForUpdate(r.target_version); }
+    catch (x) { toast(x.message); ap.disabled = false; ap.textContent = `Update to ${L.version}`; }
+  });
+}
+/* Release notes: a small, safe Markdown subset (everything is escaped first). */
+function mdLite(src) {
+  const inline = t => esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  let html = "", list = false, code = false;
+  for (const raw of String(src).replace(/\r/g, "").split("\n")) {
+    const line = raw.trimEnd();
+    if (line.startsWith("```")) { code = !code; html += code ? '<div class="code">' : "</div>"; continue; }
+    if (code) { html += esc(line) + "\n"; continue; }
+    const li = line.match(/^\s*[-*]\s+(.*)/);
+    if (li) { if (!list) { html += "<ul>"; list = true; } html += `<li>${inline(li[1])}</li>`; continue; }
+    if (list) { html += "</ul>"; list = false; }
+    const h = line.match(/^#{1,6}\s+(.*)/);
+    if (h) html += `<h4>${inline(h[1])}</h4>`;
+    else if (line.trim()) html += `<p>${inline(line)}</p>`;
+  }
+  return html + (list ? "</ul>" : "") + (code ? "</div>" : "");
+}
+function waitForUpdate(target) {
+  clearInterval(timer); clearInterval(statusTimer);
+  const ov = document.createElement("div");
+  ov.className = "overlay";
+  ov.innerHTML = `<div class="box"><div class="spin"></div><h1 style="font-size:22px">Updating Crate to ${esc(target)}</h1>
+    <p class="sub" id="ovmsg">Crate is restarting with the new version. This page reloads by itself when it's back, usually within a minute.</p></div>`;
+  document.body.appendChild(ov);
+  const startAt = Date.now();
+  const tick = async () => {
+    try {
+      const v = await (await fetch("/api/version", { cache: "no-store" })).json();
+      if (v.version === target) { $("#ovmsg").textContent = "Done! Reloading…"; setTimeout(() => location.reload(), 800); return; }
+    } catch {}
+    if (Date.now() - startAt > 6 * 60 * 1000) {
+      $(".box", ov).innerHTML = `<h1 style="font-size:22px">The update didn't finish</h1><p class="sub">Crate is still on the previous version; it probably switched back because the new one didn't start properly. Settings → Updates shows what happened.</p><button class="btn primary" onclick="location.href='#/settings/updates';location.reload()">Open Settings → Updates</button>`;
+      return;
+    }
+    setTimeout(tick, 3000);
+  };
+  setTimeout(tick, 4000);
+}
+
 /* ---------------- router ---------------- */
 async function render(first = false) {
   const h = location.hash.replace(/^#/, "") || "/";
-  const [, v, id] = h.match(/^\/(\w*)\/?(\d+)?/) || [];
+  const [, v, id] = h.match(/^\/(\w*)\/?([\w-]+)?/) || [];
+  if (v === "duplicates" && !isAdmin()) { view.innerHTML = `<div class="blank"><div class="big">Admins only</div></div>`; return; }
   document.querySelectorAll("#nav a").forEach(a => a.classList.toggle("on",
     a.dataset.v === (["artist", "import", "missing", ""].includes(v || "") ? "artists" : v)));
   try {
@@ -1025,7 +1268,7 @@ async function render(first = false) {
     else if (v === "duplicates") await viewDupes(first);
     else if (v === "import") await viewImport(first);
     else if (v === "missing") await viewMissing(first);
-    else if (v === "settings") { if (first) await viewSettings(); }
+    else if (v === "settings") { if (first) await viewSettings(id || "general"); }
     else await viewArtists(first);
   } catch (e) { view.innerHTML = `<div class="blank"><div class="big">Something went wrong</div>${esc(e.message)}</div>`; }
 }
@@ -1041,9 +1284,92 @@ function go() {
     render(false);
   }, v === "activity" ? 5000 : 3000);
 }
-window.addEventListener("hashchange", go);
-refreshStatus().then(go);
-setInterval(() => { if (!document.hidden) refreshStatus(); }, 5000);
+/* ---------------- sign-in ---------------- */
+let statusTimer = null, started = false;
+function signedOut(msg) {
+  me = null; started = false;
+  clearInterval(timer); clearInterval(statusTimer);
+  showAuth("login", msg);
+}
+function showAuth(mode, msg = "") {
+  $("#hdr").hidden = true;
+  const setup = mode === "setup";
+  view.innerHTML = `<div class="auth-wrap"><form class="auth-card" id="authf" autocomplete="on">
+    <div class="logo"><span class="disc"></span>Crate</div>
+    <h1>${setup ? "Create the admin account" : "Sign in"}</h1>
+    <p class="sub" style="margin:0">${setup ? "This is the first time Crate has started. The account you create now is the admin: it can change settings, add users and install updates." : "Follow artists, get their albums."}</p>
+    <label for="au">Username</label><input id="au" name="username" autocomplete="username" required ${setup ? 'minlength="2"' : ""} autofocus>
+    <label for="ap">Password</label><input id="ap" name="password" type="password" autocomplete="${setup ? "new-password" : "current-password"}" required ${setup ? 'minlength="6"' : ""}>
+    ${setup ? `<label for="ap2">Confirm password</label><input id="ap2" type="password" autocomplete="new-password" required>` : ""}
+    <button class="btn primary" type="submit">${setup ? "Create admin & continue" : "Sign in"}</button>
+    <div class="auth-err" id="aerr">${esc(msg)}</div>
+  </form></div>`;
+  $("#authf").onsubmit = async e => {
+    e.preventDefault();
+    const err = $("#aerr"), btn = e.target.querySelector("button");
+    err.textContent = "";
+    if (setup && $("#ap").value !== $("#ap2").value) { err.textContent = "The passwords don't match."; return; }
+    btn.disabled = true;
+    try {
+      me = await api(setup ? "/api/setup" : "/api/login", { method: "POST", noRedirect: true, body: { username: $("#au").value.trim(), password: $("#ap").value } });
+      startApp();
+    } catch (x) { err.textContent = x.message; btn.disabled = false; }
+  };
+}
+function renderUserMenu() {
+  $("#umenu").hidden = false;
+  $("#uav").textContent = (me.username[0] || "?").toUpperCase();
+  $("#uname").textContent = me.username;
+  document.querySelectorAll("[data-admin]").forEach(a => a.hidden = !isAdmin());
+  const conn = $("#conn");
+  if (isAdmin()) conn.setAttribute("href", "#/settings"); else conn.removeAttribute("href");
+}
+function openUserMenu() {
+  const d = $("#udrop");
+  if (!d.hidden) { d.hidden = true; return; }
+  const lim = me.role !== "admin" && me.daily_limit ? `<div style="margin-top:6px">${me.requested_today} of ${me.daily_limit} albums requested today</div>` : "";
+  d.innerHTML = `<div class="who"><b>${esc(me.username)}</b>${me.role === "admin" ? "Admin" : "User"}${lim}</div>
+    <button id="mpw">Change password</button>
+    ${isAdmin() ? `<a href="#/settings/users" id="musers">Manage users</a>` : ""}
+    <button id="mout">Sign out</button>`;
+  d.hidden = false;
+  $("#mout").onclick = async () => { d.hidden = true; await api("/api/logout", { method: "POST", noRedirect: true }).catch(() => {}); signedOut(""); };
+  if ($("#musers")) $("#musers").onclick = () => { d.hidden = true; };
+  $("#mpw").onclick = () => {
+    d.innerHTML = `<div class="who"><b>Change password</b></div><form class="pwbox" id="pwf">
+      <input type="password" id="pc" placeholder="Current password" autocomplete="current-password" required>
+      <input type="password" id="pn" placeholder="New password (6+ characters)" autocomplete="new-password" minlength="6" required>
+      <button class="btn primary sm" type="submit" style="width:auto">Save new password</button><div class="auth-err" id="pwe"></div></form>`;
+    $("#pc").focus();
+    $("#pwf").onsubmit = async e => {
+      e.preventDefault();
+      try { await api("/api/me/password", { method: "POST", body: { current: $("#pc").value, new: $("#pn").value } }); d.hidden = true; toast("Password changed. Other devices were signed out."); }
+      catch (x) { $("#pwe").textContent = x.message; }
+    };
+  };
+}
+document.addEventListener("click", e => {
+  if (e.target.closest("#ubtn")) return openUserMenu();
+  if (!e.target.closest("#udrop")) { const d = $("#udrop"); if (d) d.hidden = true; }
+});
+function startApp() {
+  $("#hdr").hidden = false;
+  renderUserMenu();
+  if (started) return go();
+  started = true;
+  refreshStatus().then(go);
+  statusTimer = setInterval(() => { if (!document.hidden && me) refreshStatus(); }, 5000);
+}
+async function boot() {
+  let s = null;
+  try { s = await (await fetch("/api/setup-needed")).json(); }
+  catch { view.innerHTML = `<div class="blank"><div class="big">Can't reach Crate</div>Check that it's running, then reload.</div>`; return; }
+  if (s.needed) return showAuth("setup");
+  try { me = await api("/api/me", { noRedirect: true }); } catch { return showAuth("login"); }
+  startApp();
+}
+window.addEventListener("hashchange", () => { if (me) go(); });
+boot();
 </script>
 </body>
 </html>

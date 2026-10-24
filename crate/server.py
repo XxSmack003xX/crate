@@ -7,18 +7,29 @@ import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from .auth import COOKIE, PERM_LABEL, SESSION_SECONDS, AuthError
 from .core import ACTIVE, App
-from .db import DEFAULTS, SECRET_KEYS
+from .db import DEFAULTS, SECRET_KEYS, now_iso
 from .dupes import DupeError
+from . import __version__
 from .slskd import Slskd, SlskdError
+from .updater import UpdateError
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web")
 ROUTES = []
 
 
-def route(method, pattern):
+ACCESS = ("public", "user", "artists", "downloads", "admin")
+
+
+def route(method, pattern, access="admin"):
+    """Register an API route. Routes are admin-only unless they say otherwise:
+    public (no login), user (any signed-in account), artists / downloads (users
+    with that permission), admin."""
+    assert access in ACCESS
+
     def deco(fn):
-        ROUTES.append((method, re.compile("^" + pattern + "$"), fn))
+        ROUTES.append((method, re.compile("^" + pattern + "$"), fn, access))
         return fn
     return deco
 
@@ -59,7 +70,7 @@ def _album_out(a):
 
 
 # ------------------------------------------------------------------ routes
-@route("GET", r"/api/status")
+@route("GET", r"/api/status", access="user")
 def status(app, h, m, body):
     counts = {r["status"]: r["n"] for r in app.db.q("SELECT status, COUNT(*) n FROM albums GROUP BY status")}
     # "missing" only counts albums that are actually out (matches the Missing albums page)
@@ -72,6 +83,8 @@ def status(app, h, m, body):
         "last_tick": app.last_tick,
         "counts": counts,
         "artists": app.db.one("SELECT COUNT(*) n FROM artists")["n"],
+        "version": __version__,
+        "update": app.updater.banner() if h.me and h.me["role"] == "admin" else None,
     }
 
 
@@ -116,7 +129,7 @@ def test_settings(app, h, m, body):
     return out
 
 
-@route("GET", r"/api/mb/artists")
+@route("GET", r"/api/mb/artists", access="user")
 def mb_search(app, h, m, body):
     q = (h.query.get("q") or [""])[0].strip()
     if not q:
@@ -128,26 +141,32 @@ def mb_search(app, h, m, body):
     return results
 
 
-@route("GET", r"/api/mb/artists/([0-9a-fA-F-]{36}|[\w-]+)/info")
+@route("GET", r"/api/mb/artists/([0-9a-fA-F-]{36}|[\w-]+)/info", access="user")
 def mb_artist_info(app, h, m, body):
     return app.artist_info(m.group(1))
 
 
-@route("GET", r"/api/artists")
+@route("GET", r"/api/artists", access="user")
 def list_artists(app, h, m, body):
     return _artist_rows(app)
 
 
-@route("POST", r"/api/artists")
+@route("POST", r"/api/artists", access="artists")
 def add_artist(app, h, m, body):
     mbid = (body or {}).get("mbid")
     if not mbid:
         raise HTTPError(400, "mbid required")
-    artist, created = app.add_artist(mbid)
+    me = h.me
+    auto = None
+    # Users with a daily limit (or no download permission) don't get whole discographies
+    # queued automatically: missing albums wait for them to pick, counted against the limit.
+    if me["role"] != "admin" and (not app.auth.can(me, "downloads") or (me.get("daily_limit") or 0) > 0):
+        auto = False
+    artist, created = app.add_artist(mbid, added_by=me["username"], auto_download=auto)
     return {"artist": artist, "created": created}
 
 
-@route("GET", r"/api/artists/(\d+)")
+@route("GET", r"/api/artists/(\d+)", access="user")
 def get_artist(app, h, m, body):
     rows = _artist_rows(app, "WHERE ar.id = ?", (int(m.group(1)),))
     if not rows:
@@ -163,30 +182,42 @@ def delete_artist(app, h, m, body):
     return {"ok": True}
 
 
-@route("POST", r"/api/artists/(\d+)/sync")
+@route("POST", r"/api/artists/(\d+)/sync", access="artists")
 def sync_artist(app, h, m, body):
     threading.Thread(target=app.sync_artist, args=(int(m.group(1)),), daemon=True).start()
     return {"ok": True}
 
 
-@route("POST", r"/api/artists/(\d+)/download-all")
+@route("POST", r"/api/artists/(\d+)/download-all", access="downloads")
 def download_all(app, h, m, body):
-    ids = app.db.q("SELECT id FROM albums WHERE artist_id = ? AND status IN ('missing','not_found','failed')",
-                   (int(m.group(1)),))
-    for r in ids:
-        app.album_action(r["id"], "download")
-    return {"ok": True, "count": len(ids)}
+    ids = [r["id"] for r in app.db.q(
+        "SELECT id FROM albums WHERE artist_id = ? AND status IN ('missing','not_found','failed') "
+        "ORDER BY release_date DESC", (int(m.group(1)),))]
+    res = _queue(app, h.me, ids)
+    return {"ok": True, "count": res["queued"], **res}
 
 
-@route("POST", r"/api/albums/(\d+)/(download|retry|want|skip|next_source|recheck)")
+@route("POST", r"/api/albums/(\d+)/(download|retry|want|skip|next_source|recheck)", access="downloads")
 def album_action(app, h, m, body):
+    action, me = m.group(2), h.me
+    if action == "skip" and me["role"] != "admin":
+        raise HTTPError(403, "Only admins can skip releases.")
     try:
-        return _album_out(app.album_action(int(m.group(1)), m.group(2)))
+        if action in ("download", "retry", "want"):
+            a = app.album(int(m.group(1)))
+            if not a:
+                raise KeyError
+            if a["status"] not in ("wanted", "searching", "queued", "downloading", "importing"):
+                res = _queue(app, me, [a["id"]], action)
+                if res["limited"]:
+                    raise HTTPError(429, res["message"])
+            return _album_out(app.album(int(m.group(1))))
+        return _album_out(app.album_action(int(m.group(1)), action, username=me["username"]))
     except KeyError:
         raise HTTPError(404, "album not found")
 
 
-@route("GET", r"/api/queue")
+@route("GET", r"/api/queue", access="user")
 def queue(app, h, m, body):
     marks = ",".join("?" * len(ACTIVE))
     active = app.db.q(
@@ -199,10 +230,13 @@ def queue(app, h, m, body):
     return {"active": [_album_out(a) for a in active], "waiting": [_album_out(a) for a in waiting]}
 
 
-@route("GET", r"/api/activity")
+@route("GET", r"/api/activity", access="user")
 def activity(app, h, m, body):
-    limit = int((h.query.get("limit") or ["100"])[0])
-    return app.db.q("SELECT * FROM events ORDER BY id DESC LIMIT ?", (min(limit, 1000),))
+    limit = min(int((h.query.get("limit") or ["100"])[0]), 1000)
+    if h.me["role"] == "admin":
+        return app.db.q("SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,))
+    # Non-admins see what they did themselves (like MEDIARR).
+    return app.db.q("SELECT * FROM events WHERE username = ? ORDER BY id DESC LIMIT ?", (h.me["username"], limit))
 
 
 @route("POST", r"/api/slskd/clear-searches")
@@ -238,7 +272,7 @@ def _today():
     return datetime.date.today().isoformat()
 
 
-@route("GET", r"/api/missing")
+@route("GET", r"/api/missing", access="user")
 def missing(app, h, m, body):
     rows = app.db.q(
         "SELECT al.*, ar.name AS artist_name FROM albums al JOIN artists ar ON ar.id = al.artist_id "
@@ -253,7 +287,7 @@ def missing(app, h, m, body):
     return {"total": len(rows), "artists": [groups[i] for i in order]}
 
 
-@route("POST", r"/api/missing/download")
+@route("POST", r"/api/missing/download", access="downloads")
 def missing_download(app, h, m, body):
     """Queue missing albums: all of them, one artist's ({artist_id}), or a list ({album_ids})."""
     body = body or {}
@@ -265,11 +299,159 @@ def missing_download(app, h, m, body):
     if body.get("album_ids"):
         want = {int(i) for i in body["album_ids"]}
         ids = [i for i in ids if i in want]
+    res = _queue(app, h.me, ids)
+    if res["queued"]:
+        app.db.event(f"{h.me['username']} queued {res['queued']} missing album(s) to download",
+                     username=h.me["username"])
+    return res
+
+
+def _queue(app, me, ids, action="download"):
+    """Queue albums for download on behalf of `me`, respecting their daily limit."""
+    remaining = app.auth.remaining_today(me)
+    queued = limited = 0
     for i in ids:
-        app.album_action(i, "download")
-    if ids:
-        app.db.event(f"Queued {len(ids)} missing album(s) to download")
-    return {"queued": len(ids)}
+        if remaining is not None and queued >= remaining:
+            limited += 1
+            continue
+        a = app.album_action(i, action, username=me["username"])
+        if a and a["status"] == "wanted":
+            queued += 1
+    msg = ""
+    if limited:
+        msg = (f"Daily limit reached: you can queue {me['daily_limit']} album(s) a day. "
+               f"{limited} album(s) weren't queued. Ask an admin to raise your limit.")
+    return {"queued": queued, "limited": limited, "message": msg, "remaining": app.auth.remaining_today(me)}
+
+
+# ------------------------------------------------------------------ accounts
+def _client_ip(h):
+    if os.environ.get("CRATE_TRUST_PROXY") == "1":
+        fwd = (h.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        if fwd:
+            return fwd
+    return h.client_address[0]
+
+
+def _secure(h):
+    if os.environ.get("CRATE_SECURE_COOKIES") == "1":
+        return True
+    return (h.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower() == "https"
+
+
+def _set_session(h, token):
+    flags = "; Secure" if _secure(h) else ""
+    h.extra_headers.append(("Set-Cookie", f"{COOKIE}={token}; HttpOnly; SameSite=Lax; Path=/; "
+                                          f"Max-Age={int(SESSION_SECONDS)}{flags}"))
+
+
+@route("GET", r"/api/version", access="public")
+def version(app, h, m, body):
+    return {"app": "Crate", "version": __version__}
+
+
+@route("GET", r"/api/setup-needed", access="public")
+def setup_needed(app, h, m, body):
+    return {"needed": app.auth.count() == 0, "version": __version__}
+
+
+@route("POST", r"/api/setup", access="public")
+def setup(app, h, m, body):
+    if app.auth.count():
+        raise HTTPError(403, "Setup is already complete. Sign in instead.")
+    body = body or {}
+    u = app.auth.create(body.get("username"), body.get("password"), role="admin", created_by="setup")
+    _set_session(h, app.auth.new_session(u["id"], _client_ip(h)))
+    app.db.x("UPDATE users SET last_login = ? WHERE id = ?", (now_iso(), u["id"]))
+    app.db.event(f"Created admin account '{u['username']}' (first-run setup)", username=u["username"])
+    return app.auth.public(u)
+
+
+@route("POST", r"/api/login", access="public")
+def login(app, h, m, body):
+    body = body or {}
+    u, token = app.auth.login(body.get("username"), body.get("password"), _client_ip(h))
+    _set_session(h, token)
+    return app.auth.public(u)
+
+
+@route("POST", r"/api/logout", access="public")
+def logout(app, h, m, body):
+    app.auth.logout(h.token)
+    h.extra_headers.append(("Set-Cookie", f"{COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"))
+    return {"ok": True}
+
+
+@route("GET", r"/api/me", access="user")
+def me(app, h, m, body):
+    return app.auth.public(h.me)
+
+
+@route("POST", r"/api/me/password", access="user")
+def change_password(app, h, m, body):
+    from .auth import verify_password
+    body = body or {}
+    if not verify_password(body.get("current") or "", h.me["salt"], h.me["hash"]):
+        raise HTTPError(403, "Current password is incorrect.")
+    app.auth.set_password(h.me["id"], body.get("new") or "")
+    # Sign out other sessions, keep this one.
+    app.db.x("DELETE FROM sessions WHERE user_id = ?", (h.me["id"],))
+    _set_session(h, app.auth.new_session(h.me["id"], _client_ip(h)))
+    return {"ok": True}
+
+
+@route("GET", r"/api/users")
+def users_list(app, h, m, body):
+    return {"users": app.auth.list(), "perm_labels": PERM_LABEL}
+
+
+@route("POST", r"/api/users")
+def users_create(app, h, m, body):
+    body = body or {}
+    u = app.auth.create(body.get("username"), body.get("password"), role=body.get("role"),
+                        perms=body.get("perms"), daily_limit=body.get("daily_limit", 10),
+                        created_by=h.me["username"])
+    app.db.event(f"{h.me['username']} created {u['role']} account '{u['username']}'", username=h.me["username"])
+    return app.auth.public(u)
+
+
+@route("PATCH", r"/api/users/(\d+)")
+def users_update(app, h, m, body):
+    body = body or {}
+    u = app.auth.update(int(m.group(1)), h.me, role=body.get("role"), perms=body.get("perms"),
+                        daily_limit=body.get("daily_limit"), password=body.get("password") or None)
+    return app.auth.public(u)
+
+
+@route("DELETE", r"/api/users/(\d+)")
+def users_delete(app, h, m, body):
+    u = app.auth.get_id(int(m.group(1)))
+    app.auth.delete(int(m.group(1)), h.me)
+    app.db.event(f"{h.me['username']} removed account '{u['username'] if u else '?'}'", username=h.me["username"])
+    return {"ok": True}
+
+
+# ------------------------------------------------------------------ updates
+@route("GET", r"/api/update")
+def update_status(app, h, m, body):
+    return app.updater.status(force=(h.query.get("fresh") or ["0"])[0] == "1")
+
+
+@route("POST", r"/api/update/config")
+def update_config(app, h, m, body):
+    body = body or {}
+    vals = {}
+    if "enabled" in body:
+        vals["update_checks"] = "true" if body["enabled"] else "false"
+    if "repo" in body and not app.updater.repo_locked():
+        vals["update_repo"] = str(body["repo"] or "").strip()
+    app.db.save_settings(vals)
+    return app.updater.status(force=True)
+
+
+@route("POST", r"/api/update/apply")
+def update_apply(app, h, m, body):
+    return app.updater.apply(h.me, force=bool((body or {}).get("force")))
 
 
 @route("GET", r"/api/dupes")
@@ -304,10 +486,18 @@ def rescan(app, h, m, body):
     return {"folders": folders, "matched": matched}
 
 
+def _cookie(header, name):
+    for part in (header or "").split(";"):
+        k, _, v = part.strip().partition("=")
+        if k == name:
+            return urllib.parse.unquote(v)
+    return None
+
+
 # ----------------------------------------------------------------- handler
 def make_handler(app):
     class Handler(BaseHTTPRequestHandler):
-        server_version = "Crate/1.2"
+        server_version = "Crate/1.3"
 
         def log_message(self, fmt, *args):  # quiet
             pass
@@ -318,6 +508,8 @@ def make_handler(app):
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
+            for k, v in getattr(self, "extra_headers", []):
+                self.send_header(k, v)
             self.end_headers()
             self.wfile.write(data)
 
@@ -334,14 +526,34 @@ def make_handler(app):
                     body = json.loads(self.rfile.read(length).decode("utf-8"))
                 except ValueError:
                     return self._send(400, {"error": "invalid JSON"})
-            for meth, rx, fn in ROUTES:
+            self.extra_headers = []
+            self.token = None
+            self.me = None
+            for meth, rx, fn, access in ROUTES:
                 if meth != method:
                     continue
                 m = rx.match(path)
                 if m:
+                    # Cross-site requests can't add custom headers, so this blocks CSRF.
+                    if method != "GET" and self.headers.get("X-Crate") != "1":
+                        return self._send(403, {"error": "Missing X-Crate header"})
+                    self.token = _cookie(self.headers.get("Cookie"), COOKIE)
+                    self.me = app.auth.from_token(self.token)
+                    if access != "public":
+                        if not self.me:
+                            return self._send(401, {"error": "Sign in to continue.", "login": True})
+                        if access == "admin" and self.me["role"] != "admin":
+                            return self._send(403, {"error": "Only admins can do that."})
+                        if access in PERM_LABEL and not app.auth.can(self.me, access):
+                            return self._send(403, {"error": f"Your account isn't allowed to {PERM_LABEL[access]}. "
+                                                             "Ask an admin if you need this."})
                     try:
                         return self._send(200, fn(app, self, m, body))
                     except HTTPError as e:
+                        return self._send(e.code, {"error": str(e)})
+                    except AuthError as e:
+                        return self._send(e.code, {"error": str(e)})
+                    except UpdateError as e:
                         return self._send(e.code, {"error": str(e)})
                     except SlskdError as e:
                         return self._send(502, {"error": str(e)})
@@ -373,6 +585,9 @@ def make_handler(app):
 
         def do_DELETE(self):
             self._dispatch("DELETE")
+
+        def do_PATCH(self):
+            self._dispatch("PATCH")
 
     return Handler
 

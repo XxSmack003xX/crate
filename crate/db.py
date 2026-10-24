@@ -65,6 +65,25 @@ CREATE TABLE IF NOT EXISTS artist_info (
     data       TEXT,
     fetched_at TEXT
 );
+CREATE TABLE IF NOT EXISTS users (
+    id          INTEGER PRIMARY KEY,
+    username    TEXT UNIQUE NOT NULL COLLATE NOCASE,
+    role        TEXT NOT NULL DEFAULT 'user',
+    salt        TEXT NOT NULL,
+    hash        TEXT NOT NULL,
+    perms       TEXT DEFAULT '{}',
+    daily_limit INTEGER DEFAULT 10,
+    created_at  TEXT,
+    created_by  TEXT,
+    last_login  TEXT
+);
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires    REAL NOT NULL,
+    created_at TEXT,
+    ip         TEXT
+);
 CREATE TABLE IF NOT EXISTS events (
     id        INTEGER PRIMARY KEY,
     ts        TEXT,
@@ -95,6 +114,12 @@ DEFAULTS = {
     "import_mode": "move",
     # Duplicate cleanup: "trash" (move to <library>/.crate-trash) or "delete".
     "dupes_action": "trash",
+    # Updates: check GitHub Releases for new versions.
+    "update_checks": "true",
+    "update_repo": "XxSmack003xX/crate",
+    # Internal bookkeeping (not shown in the settings form).
+    "update_last_result": "",
+    "update_notified": "",
     "folder_template": "{artist}/{album} ({year})",
     "sync_hours": "24",
     "auto_download": "true",
@@ -136,6 +161,15 @@ class DB:
                 self.conn.execute("ALTER TABLE artists ADD COLUMN local_name TEXT")
             if "auto_download" not in cols:  # 1.1: per-artist override (NULL = use the global setting)
                 self.conn.execute("ALTER TABLE artists ADD COLUMN auto_download INTEGER")
+            if "added_by" not in cols:  # 1.3: who followed this artist
+                self.conn.execute("ALTER TABLE artists ADD COLUMN added_by TEXT")
+            acols = {r[1] for r in self.conn.execute("PRAGMA table_info(albums)")}
+            if "requested_by" not in acols:  # 1.3: who asked for this download (daily limits)
+                self.conn.execute("ALTER TABLE albums ADD COLUMN requested_by TEXT")
+                self.conn.execute("ALTER TABLE albums ADD COLUMN requested_at TEXT")
+            ecols = {r[1] for r in self.conn.execute("PRAGMA table_info(events)")}
+            if "username" not in ecols:  # 1.3: who did it
+                self.conn.execute("ALTER TABLE events ADD COLUMN username TEXT")
 
     # ---- generic helpers -------------------------------------------------
     def q(self, sql, args=()):
@@ -157,10 +191,10 @@ class DB:
         vals = [json.dumps(v) if isinstance(v, (list, dict)) else v for v in fields.values()]
         self.x(f"UPDATE albums SET {cols} WHERE id = ?", (*vals, album_id))
 
-    def event(self, message, level="info", artist_id=None, album_id=None):
+    def event(self, message, level="info", artist_id=None, album_id=None, username=None):
         self.x(
-            "INSERT INTO events (ts, level, artist_id, album_id, message) VALUES (?,?,?,?,?)",
-            (now_iso(), level, artist_id, album_id, message),
+            "INSERT INTO events (ts, level, artist_id, album_id, message, username) VALUES (?,?,?,?,?,?)",
+            (now_iso(), level, artist_id, album_id, message, username),
         )
         # keep the log bounded
         self.x("DELETE FROM events WHERE id < (SELECT MAX(id) - 5000 FROM events)")

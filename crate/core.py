@@ -22,7 +22,9 @@ from datetime import datetime, timedelta, timezone
 
 from .db import DB, Settings, now_iso, parse_iso
 from .dupes import DupeScanner
+from .auth import Auth
 from .importer import LibraryImporter
+from .updater import Updater
 from .library import Library
 from .matcher import rank_candidates, search_queries
 from .mb import MusicBrainz
@@ -60,6 +62,8 @@ class App:
         self.library = Library(self.settings)
         self.dupes = DupeScanner(self)
         self.importer = LibraryImporter(self)
+        self.auth = Auth(self.db)
+        self.updater = Updater(self, db_path)
         self.stop = threading.Event()
         self.wake = threading.Event()
         self._sync_lock = threading.Lock()
@@ -179,17 +183,19 @@ class App:
             self.db.x("UPDATE artists SET image = ? WHERE mbid = ?", (info["image"], mbid))
         return info
 
-    def add_artist(self, mbid):
+    def add_artist(self, mbid, added_by=None, auto_download=None):
         existing = self.db.one("SELECT * FROM artists WHERE mbid = ?", (mbid,))
         if existing:
             return existing, False
         info = self.mb.get_artist(mbid)
         aid = self.db.x(
-            "INSERT INTO artists (mbid, name, sort_name, disambiguation, country, added_at, sync_status) "
-            "VALUES (?,?,?,?,?,?, 'pending')",
-            (info["mbid"], info["name"], info["sort_name"], info["disambiguation"], info["country"], now_iso()),
+            "INSERT INTO artists (mbid, name, sort_name, disambiguation, country, added_at, sync_status, "
+            "added_by, auto_download) VALUES (?,?,?,?,?,?, 'pending', ?, ?)",
+            (info["mbid"], info["name"], info["sort_name"], info["disambiguation"], info["country"], now_iso(),
+             added_by, None if auto_download is None else (1 if auto_download else 0)),
         )
-        self.db.event(f"Added artist {info['name']}", artist_id=aid)
+        self.db.event(f"Added artist {info['name']}" + (f" (by {added_by})" if added_by else ""),
+                      artist_id=aid, username=added_by)
         threading.Thread(target=self.sync_artist, args=(aid,), daemon=True).start()
         return self.db.one("SELECT * FROM artists WHERE id = ?", (aid,)), True
 
@@ -265,7 +271,7 @@ class App:
                 self.db.event(f"Couldn't fetch discography for {artist['name']}: {e}", "error", artist_id=artist_id)
 
     # ---------------------------------------------------------------- albums
-    def album_action(self, album_id, action):
+    def album_action(self, album_id, action, username=None):
         a = self.album(album_id)
         if not a:
             raise KeyError("album not found")
@@ -277,7 +283,8 @@ class App:
             else:
                 self.db.update_album(album_id, status="wanted", status_detail="Waiting to search", query_index=0,
                                      candidates=None, candidate_index=0, tried_users="[]", attempts=0,
-                                     next_retry=None, search_id=None)
+                                     next_retry=None, search_id=None,
+                                     requested_by=username, requested_at=now_iso() if username else None)
         elif action == "skip":
             self._cancel_active(a)
             self.db.update_album(album_id, status="skipped", status_detail="Skipped by you")
@@ -323,6 +330,10 @@ class App:
             self.wake.clear()
 
     def tick(self):
+        try:
+            self.updater.periodic()
+        except Exception:
+            pass
         self._periodic_sync()
         if not self.configured():
             return

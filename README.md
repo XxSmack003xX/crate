@@ -23,6 +23,7 @@ Add an artist and Crate pulls their full list of releases from MusicBrainz. It c
 - [Docker setup: Crate with an slskd you already run](#docker-setup-b-crate-with-an-slskd-you-already-run)
 - [How the folders fit together](#how-the-folders-fit-together)
 - [Running without Docker](#running-without-docker)
+- [Accounts and permissions](#accounts-and-permissions)
 - [Using Crate](#using-crate)
 - [Importing the music you already have](#importing-the-music-you-already-have)
 - [How Crate picks a download](#how-crate-picks-a-download)
@@ -46,6 +47,8 @@ Add an artist and Crate pulls their full list of releases from MusicBrainz. It c
 - **Keeps up to date.** Artists are re-checked every 24 hours for new releases. Albums that weren't found are retried later, waiting longer each time.
 - **Gentle on Soulseek.** Crate only searches while slskd is logged in, leaves a gap of at least 8 seconds between searches, and backs off if a search is rejected. **Clear slskd searches** tidies slskd's search list.
 - **Duplicate scanner.** Finds albums you have more than once, either in separate folders or as FLAC and MP3 copies in one folder, and duplicate songs, like `Song (1).mp3` or the same track on an album and as a single. Remove any copy, keep one, or clean up everything in one click. Removed files go to a trash folder you can restore from.
+- **Accounts.** Sign-in with admins and users. Users can be allowed to follow artists and download albums, with a daily album limit, and everything else is admin-only.
+- **One-click updates.** Crate checks GitHub for new releases and shows what's new. Admins update from **Settings → Updates**: Crate backs up its database, swaps to the new version, and switches back automatically if it doesn't start properly.
 - **Lightweight.** Plain Python with no required packages. State lives in a single SQLite file, and there's one small web UI on port **9325**.
 
 ## How it works
@@ -121,7 +124,11 @@ Creating the folders yourself first means they're owned by you and not by root.
 
 Open **http://localhost:5030**, sign in with the web login you chose, and check that the top bar shows slskd as connected and logged in to Soulseek.
 
-**5. Open Crate**
+**5. Open Crate and create the admin account**
+
+The first time you open Crate it asks you to create the admin account. To skip that screen, set `CRATE_ADMIN_USER` and `CRATE_ADMIN_PASSWORD` in `.env` before the first start.
+
+**6. Check the connection**
 
 Go to **http://localhost:9325 → Settings → Test connection & folders**. All three lines should be green. Then go to **Artists** and add someone, or click **Import from library** to follow everyone already in your music folder.
 
@@ -203,7 +210,7 @@ docker compose up -d
 
 Open **http://localhost:9325 → Settings → Test connection & folders**. All three lines should be green. Already have a collection? Use **Artists → Import from library**.
 
-> Crate needs permission to **delete** files from slskd's downloads folder (it moves them out) and to **write** to your music folder. Set `PUID`/`PGID` to the user that owns those folders.
+> Crate needs permission to **delete** files from slskd's downloads folder (it moves them out) and to **write** to your music folder. Set `PUID`/`PGID` to the user that owns those folders. The container starts as root only to set this up (and to join the Docker socket's group for one-click updates), then runs Crate as that user. Don't add a `user:` line to the compose service.
 
 ---
 
@@ -238,6 +245,44 @@ To run it in the background on Linux, wrap it in a systemd service, or just use 
 
 ---
 
+## Accounts and permissions
+
+![First-run setup](docs/screenshots/setup.png)
+
+The first account is created on the setup screen (or from `CRATE_ADMIN_USER` / `CRATE_ADMIN_PASSWORD`) and is an **admin**. Admins add more people under **Settings → Users**.
+
+![Users](docs/screenshots/users.png)
+
+| | Admin | User |
+|---|---|---|
+| Browse artists, albums, queue, missing albums | ✓ | ✓ |
+| Follow new artists | ✓ | if **Follow new artists** is on |
+| Download albums (Download, Search again, Download all missing) | ✓ | if **Download albums** is on, up to their **daily album limit** |
+| Activity log | everything | only what they did |
+| Settings, Users, Updates, Duplicates, Import from library | ✓ | — |
+| Remove artists, skip releases, rescan library, clear slskd searches | ✓ | — |
+
+**How permissions work:**
+- **Defaults:** new users can follow artists and download albums, with a limit of **10 albums a day**. Set the limit to `0` for no limit.
+- **No surprise discographies:** an artist followed by a user with a daily limit doesn't queue its whole discography. The albums wait under **Missing albums** for them to pick, and each one counts towards their limit.
+- **Enforced on the server:** buttons a user can't use are hidden, and the server refuses those actions anyway.
+- **Admins are protected:** there's always at least one admin. You can't demote or remove the last one, or remove yourself.
+
+**Sign-in security:**
+- **Passwords** are stored as scrypt hashes.
+- **Sessions** last 24 hours (`CRATE_SESSION_HOURS`), renewed while you're using Crate, and survive restarts and updates.
+- **Lockout:** five wrong passwords lock that username and address for 1 minute, then 5, 15, 30 and 60 minutes.
+- **Your own password:** change it from the menu under your name.
+- **When an admin resets your password,** you're signed out everywhere.
+
+**Locked out?** On the server, run:
+```bash
+docker exec -it crate python -m crate reset-password USERNAME
+# also: create-admin USERNAME, list-users
+```
+
+Behind an HTTPS reverse proxy, cookies are marked `Secure` automatically when the proxy sends `X-Forwarded-Proto: https`, or always with `CRATE_SECURE_COOKIES=1`. Set `CRATE_TRUST_PROXY=1` so the login lockout uses the visitor's real address from `X-Forwarded-For`.
+
 ## Using Crate
 
 | Page | What you can do |
@@ -249,7 +294,7 @@ To run it in the background on Linux, wrap it in a systemd service, or just use 
 | **Queue** | Everything searching or downloading, with live progress, plus what's waiting or not found. **Clear slskd searches** deletes finished searches from slskd's Searches page; running searches are kept. |
 | **Duplicates** | Find and clean up albums and songs you have more than once, on the **Albums** and **Songs** tabs. See [Duplicate scanner](#duplicate-scanner). |
 | **Activity** | A log of everything Crate did and why: which source it picked, which ones failed, what was imported, connection problems. |
-| **Settings** | Connection, folders, release types, formats and bitrate, how many searches and downloads run at once, timeouts, and what happens to removed duplicates. |
+| **Settings** | **General:** connection, folders, release types, formats and bitrate, how many searches and downloads run at once, timeouts, and what happens to removed duplicates. **Users:** add people and set what they can do. **Updates:** see the latest release and install it. Admins only. |
 
 Removing an artist never deletes files from disk.
 
@@ -365,13 +410,44 @@ Every setting can be changed in the web UI. Settings can also be preset with env
 
 Process options (environment only): `CRATE_PORT` (`9325`), `CRATE_HOST` (`0.0.0.0`), `CRATE_DB` (`./data/crate.db`, `/data/crate.db` in Docker) and `CRATE_SEARCH_SPACING` (`8` seconds).
 
+| Accounts and updates (environment) | |
+|---|---|
+| `CRATE_ADMIN_USER`, `CRATE_ADMIN_PASSWORD` | Create the first admin on a fresh install, with no setup screen |
+| `CRATE_SESSION_HOURS` | How long a sign-in lasts without activity (default `24`) |
+| `CRATE_SECURE_COOKIES=1` / `CRATE_TRUST_PROXY=1` | For use behind an HTTPS reverse proxy (see above) |
+| `PUID`, `PGID` | The user Crate runs as in Docker (default `1000`) |
+| `CRATE_CONTAINER_NAME` | The container's name, so one-click updates can find it (the compose files set `crate`) |
+| `CRATE_UPDATE_REPO` | The GitHub repo whose releases Crate follows (set by the official image) |
+| `CRATE_UPDATE_CHECKS=false` | Turn off update checks (also a switch in Settings → Updates) |
+
 In Docker, the published port is set by `CRATE_PORT` in `.env`. The app inside the container always listens on 9325.
 
 ---
 
 ## Updating, logs and backups
 
-**Update to the latest version:**
+![Updates](docs/screenshots/updates.png)
+
+### From inside Crate (one click)
+
+Crate checks GitHub every 6 hours. When a new release is out, admins see a banner, and **Settings → Updates** shows the version and its release notes. Click **Update to X**, then click again to confirm:
+
+1. **Backup:** the database is copied to `crate-data/backups/` (the last 5 are kept).
+2. **Download:** the new image is pulled from `ghcr.io/xxsmack003xx/crate`.
+3. **Swap:** a short-lived helper container renames the running Crate container and starts the new version in its place, with the same settings, folders, ports and networks.
+4. **Check:** the new version must become healthy, keep every folder and see its database. Only then is the old container removed. If anything fails, the original container is put back unchanged.
+
+The page reloads by itself when the new version is up. The result, including any rollback reason and the helper's log, is under **Settings → Updates → Last update** and in **Activity**.
+
+One-click updates need the Docker socket mounted, as in the included compose files:
+```yaml
+      - /var/run/docker.sock:/var/run/docker.sock
+```
+Access to the Docker socket is effectively root access on that machine. If you'd rather not give Crate that, remove the line: Crate still tells you about new releases and you update with the commands below.
+
+> **Upgrading from 1.2.x?** Earlier compose files didn't mount the socket and used a `user:` line. Download the new compose file once (setup [A](#docker-setup-a-crate--slskd-together) or [B](#docker-setup-b-crate-with-an-slskd-you-already-run)), keep your `.env` and `crate-data`, and run `docker compose pull && docker compose up -d`. Then open Crate and create the admin account. Updates after that can be done from inside Crate.
+
+### From the command line
 
 ```bash
 docker compose pull
@@ -400,6 +476,9 @@ Everything Crate knows (artists, album states, settings) is in `crate-data/crate
 |---|---|
 | Banner: *"slskd isn't logged in to the Soulseek network"* | Check the Soulseek username and password in slskd. If you just made hundreds of searches, the server may have disconnected you for a while; wait and slskd will reconnect. Crate resumes by itself. |
 | *"slskd rejected the API key (401)"* | The key in Crate's `.env` or Settings doesn't match slskd's, or the key's `cidr:` in `slskd.yml` doesn't include the address Crate connects from (for Docker, usually `172.16.0.0/12`). Keys must be 16+ characters. Restart slskd after changing its key. |
+| Can't sign in / forgot the admin password | Run `docker exec -it crate python -m crate reset-password USERNAME`. After 5 wrong passwords Crate locks that name and address for a while; wait and try again. |
+| Settings → Updates: *"can't replace its own container"* | Mount the Docker socket and remove any `user:` line from Crate's compose service (see [Updating](#updating-logs-and-backups)). If it still can't find itself, set `CRATE_CONTAINER_NAME` to the container's name. |
+| *"Couldn't download the new image"* | Right after a release, the image takes about 3 minutes to build on GitHub, so try again shortly. *denied* means the image package isn't public. |
 | *"slskd refused … (403)"* | The key works, but its role isn't allowed to do this. Set `role: ReadWrite` (or `Administrator`) on the key in `slskd.yml` and restart slskd. Keys default to ReadOnly. Crate 1.2.1+ works with ReadWrite keys. |
 | *"Can't reach slskd at …"* | `SLSKD_URL` is wrong for where slskd runs. See the table in [setup B](#docker-setup-b-crate-with-an-slskd-you-already-run). From inside a container, `localhost` means the container itself, not your computer. |
 | Album **Failed**: *"files weren't found under /downloads"* | Crate isn't seeing slskd's downloads folder. Make sure both containers mount the **same host folder** (`DOWNLOADS_DIR`), then click **Search again**. |
@@ -413,7 +492,7 @@ Everything Crate knows (artists, album states, settings) is in `crate-data/crate
 
 ## Notes
 
-- Crate has **no login**. Keep it on your home network, or put it behind a reverse proxy with authentication if it's reachable from the internet.
+- If Crate is reachable from the internet, put it behind HTTPS (a reverse proxy such as Caddy or nginx). Sign-in protects it, but passwords shouldn't travel over plain HTTP.
 - MusicBrainz allows about one request per second, so adding an artist with a large discography takes a few seconds. Each album's tracklist is fetched just before it's searched.
 - Artist pictures come from Wikidata / Wikimedia Commons through the artist's MusicBrainz page. Album art comes from the Cover Art Archive.
 - Use Crate for music you have the right to download. You're responsible for complying with copyright law where you live.
@@ -429,6 +508,10 @@ crate/
   library.py   library scan & "already have it" matching
   dupes.py     duplicate scanner
   importer.py  import artists from your existing library
+  auth.py      accounts, sessions, permissions, lockout
+  updater.py   release checks + starting a one-click update
+  update_helper.py  replaces the container with rollback (runs in a helper container)
+  entrypoint.py     container start: Docker socket group + PUID/PGID
   server.py    HTTP API
   web/         single-page UI
 tests/
@@ -437,10 +520,13 @@ tests/
   test_dupes.py      duplicate scanner test
   test_import.py     library import test
   test_song_dupes.py duplicate songs test
+  test_auth.py       sign-in, roles, permissions, limits
+  test_updater.py    updates against a fake Docker engine (success + rollback)
+  fake_docker.py     in-memory Docker Engine API
 ```
 
 ```bash
-python3 tests/test_e2e.py && python3 tests/test_dupes.py && python3 tests/test_import.py && python3 tests/test_song_dupes.py
+for t in tests/test_*.py; do python3 "$t" || break; done
 ```
 
 No network or real slskd is needed. The tests run against fake services.

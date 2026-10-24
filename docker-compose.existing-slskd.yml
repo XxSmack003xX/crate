@@ -18,8 +18,16 @@ services:
     # To build from source instead, uncomment the next line and run: docker compose up -d --build
     # build: .
     container_name: crate
-    user: "${PUID:-1000}:${PGID:-1000}"
+    init: true
     environment:
+      # Crate runs as this user/group (the container starts as root only to set that up).
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Lets one-click updates find this container; keep it equal to container_name.
+      - CRATE_CONTAINER_NAME=crate
+      # Optional: create the first admin automatically instead of using the setup screen.
+      - CRATE_ADMIN_USER=${CRATE_ADMIN_USER:-}
+      - CRATE_ADMIN_PASSWORD=${CRATE_ADMIN_PASSWORD:-}
       - CRATE_SLSKD_URL=${SLSKD_URL:-http://host.docker.internal:5030}
       - CRATE_SLSKD_API_KEY=${SLSKD_API_KEY:?set SLSKD_API_KEY in .env}
       - CRATE_SLSKD_DOWNLOADS_DIR=/downloads
@@ -29,6 +37,10 @@ services:
       - ./crate-data:/data
       - ${DOWNLOADS_DIR:?set DOWNLOADS_DIR in .env}:/downloads
       - ${MUSIC_DIR:?set MUSIC_DIR in .env}:/music
+      # One-click updates (Settings → Updates): lets Crate replace its own container.
+      # WARNING: access to the Docker socket is effectively root on this machine.
+      # Remove this line to turn in-app updates off (then use docker compose pull).
+      - ${DOCKER_SOCKET_HOST:-/var/run/docker.sock}:/var/run/docker.sock
     ports:
       - "${CRATE_PORT:-9325}:9325"
     # Lets http://host.docker.internal reach slskd on this machine (needed on Linux).

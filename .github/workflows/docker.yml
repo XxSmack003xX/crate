@@ -31,12 +31,16 @@ jobs:
         with:
           python-version: "3.12"
       - name: Run tests
+        env:
+          CRATE_UPDATE_CHECKS: "false"
         run: |
           python tests/test_e2e.py
           python tests/test_dupes.py
           python tests/test_import.py
           python tests/test_song_dupes.py
           python tests/test_slskd_roles.py
+          python tests/test_auth.py
+          python tests/test_updater.py
 
   image:
     needs: test
