@@ -36,6 +36,7 @@ jobs:
           python tests/test_dupes.py
           python tests/test_import.py
           python tests/test_song_dupes.py
+          python tests/test_slskd_roles.py
 
   image:
     needs: test

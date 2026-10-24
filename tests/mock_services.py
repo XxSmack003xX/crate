@@ -7,7 +7,8 @@ import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-API_KEY = "test-key"
+API_KEY = "test-key"                 # Administrator role
+READWRITE_KEY = "readwrite-key-1234"   # ReadWrite role: /server is forbidden (like real slskd)
 ARTIST = {"id": "a-1", "name": "Test Band", "sort-name": "Test Band", "disambiguation": "", "country": "GB",
           "type": "Group", "score": 100, "life-span": {"begin": "1999"}}
 # A second, same-named artist with no Wikidata photo (UI should fall back to album art).
@@ -96,6 +97,7 @@ class State:
         self.logged_in = True
         self.reject_searches = False   # simulate slskd answering 400
         self.search_posts = 0
+        self.server_calls = []
 
     def advance(self):
         now = time.time()
@@ -152,7 +154,14 @@ def make(state):
             if not self.auth():
                 return
             state.advance()
+            if p == "/api/v0/application":
+                srv = ({"state": "Disconnected", "isConnected": False, "isLoggedIn": False} if not state.logged_in
+                       else {"state": "Connected, LoggedIn", "isConnected": True, "isLoggedIn": True})
+                return self.send(200, {"server": srv, "user": {"username": "tester"}, "version": {"current": "0.0.0"}})
             if p == "/api/v0/server":
+                state.server_calls.append(self.headers.get("X-API-Key"))
+                if self.headers.get("X-API-Key") != API_KEY:
+                    return self.send(403)
                 if not state.logged_in:
                     return self.send(200, {"state": "Disconnected", "isConnected": False, "isLoggedIn": False})
                 return self.send(200, {"state": "Connected, LoggedIn", "isConnected": True, "isLoggedIn": True,
@@ -231,7 +240,7 @@ def make(state):
             self.send(404)
 
         def auth(self):
-            if self.headers.get("X-API-Key") != API_KEY:
+            if self.headers.get("X-API-Key") not in (API_KEY, READWRITE_KEY):
                 self.send(401)
                 return False
             return True

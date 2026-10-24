@@ -167,8 +167,9 @@ Pick one of these, then restart slskd:
       api_keys:
         crate:
           key: a-long-random-string-at-least-16-chars
-          role: ReadWrite
+          role: ReadWrite        # or Administrator; NOT the default ReadOnly
   ```
+  Keys in `slskd.yml` are **ReadOnly** unless you set a role. If the key has a `cidr:` line, it must include the address Crate connects from. For a Docker container, that's usually the Docker network (e.g. `172.16.0.0/12`), not your LAN.
 
 Put the same key in Crate's `.env` as `SLSKD_API_KEY`.
 
@@ -398,7 +399,8 @@ Everything Crate knows (artists, album states, settings) is in `crate-data/crate
 | Symptom | Fix |
 |---|---|
 | Banner: *"slskd isn't logged in to the Soulseek network"* | Check the Soulseek username and password in slskd. If you just made hundreds of searches, the server may have disconnected you for a while; wait and slskd will reconnect. Crate resumes by itself. |
-| *"slskd rejected the API key (401)"* | The key in Crate's `.env` or Settings doesn't match slskd's. Keys must be 16+ characters. Restart slskd after changing its key. |
+| *"slskd rejected the API key (401)"* | The key in Crate's `.env` or Settings doesn't match slskd's, or the key's `cidr:` in `slskd.yml` doesn't include the address Crate connects from (for Docker, usually `172.16.0.0/12`). Keys must be 16+ characters. Restart slskd after changing its key. |
+| *"slskd refused … (403)"* | The key works, but its role isn't allowed to do this. Set `role: ReadWrite` (or `Administrator`) on the key in `slskd.yml` and restart slskd. Keys default to ReadOnly. Crate 1.2.1+ works with ReadWrite keys. |
 | *"Can't reach slskd at …"* | `SLSKD_URL` is wrong for where slskd runs. See the table in [setup B](#docker-setup-b-crate-with-an-slskd-you-already-run). From inside a container, `localhost` means the container itself, not your computer. |
 | Album **Failed**: *"files weren't found under /downloads"* | Crate isn't seeing slskd's downloads folder. Make sure both containers mount the **same host folder** (`DOWNLOADS_DIR`), then click **Search again**. |
 | *Permission denied* when importing | Set `PUID`/`PGID` in `.env` to the owner of your music and downloads folders, then run `docker compose up -d` again. |

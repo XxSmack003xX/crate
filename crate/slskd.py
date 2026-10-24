@@ -7,7 +7,14 @@ import uuid
 
 
 class SlskdError(Exception):
-    pass
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
+
+
+# slskd's /server endpoint is Administrator-only; ReadWrite/ReadOnly keys get 403
+# there but can read the same login state from /application. Remember per URL.
+_USE_APPLICATION_STATE = set()
 
 
 class Slskd:
@@ -44,8 +51,12 @@ class Slskd:
             except Exception:
                 pass
             if e.code == 401:
-                raise SlskdError("slskd rejected the API key (401). Check the key in Settings.") from e
-            raise SlskdError(f"slskd {method} {path} -> HTTP {e.code} {detail}") from e
+                raise SlskdError("slskd rejected the API key (401): it's wrong, or not allowed from this "
+                                 "IP address (the key's cidr setting). Check the key in Settings.", 401) from e
+            if e.code == 403:
+                raise SlskdError(f"slskd refused {method} {path} (403): the API key's role isn't allowed to do "
+                                 "this. Give the key the ReadWrite or Administrator role in slskd.", 403) from e
+            raise SlskdError(f"slskd {method} {path} -> HTTP {e.code} {detail}", e.code) from e
         except urllib.error.URLError as e:
             raise SlskdError(f"Can't reach slskd at {self.base}: {e.reason}") from e
 
@@ -55,7 +66,20 @@ class Slskd:
 
     # ---- status ----------------------------------------------------------
     def server_state(self):
-        return self._req("GET", "/server") or {}
+        """Soulseek connection state: {state, isConnected, isLoggedIn, username?}."""
+        if self.base not in _USE_APPLICATION_STATE:
+            try:
+                return self._req("GET", "/server") or {}
+            except SlskdError as e:
+                if e.status != 403:
+                    raise
+                _USE_APPLICATION_STATE.add(self.base)
+        app = self._req("GET", "/application") or {}
+        server = dict(app.get("server") or {})
+        user = app.get("user") or {}
+        if user.get("username") and not server.get("username"):
+            server["username"] = user["username"]
+        return server
 
     # ---- searches --------------------------------------------------------
     def start_search(self, text, timeout_s=45):
