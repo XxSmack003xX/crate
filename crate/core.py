@@ -311,8 +311,8 @@ class App:
             raise KeyError("artist not found")
         if artist.get("followed") in (None, 1):
             return artist, False
-        self.db.x("UPDATE artists SET followed = 1, monitor = ?, monitor_since = ?, added_by = COALESCE(added_by, ?), "
-                  "auto_download = ?, last_synced = NULL WHERE id = ?",
+        self.db.x("UPDATE artists SET followed = 1, monitored = 1, monitor = ?, monitor_since = ?, "
+                  "added_by = COALESCE(added_by, ?), auto_download = ?, last_synced = NULL WHERE id = ?",
                   (monitor, _utcnow().date().isoformat() if monitor == "new" else None, username,
                    None if auto_download is None else (1 if auto_download else 0), artist_id))
         self.db.event(f"Now following {artist['name']}" + (f" (by {username})" if username else ""),
@@ -333,7 +333,7 @@ class App:
             info = self.mb.get_artist(g["artist_mbid"])
             aid = self.db.x(
                 "INSERT INTO artists (mbid, name, sort_name, disambiguation, country, added_at, sync_status, "
-                "added_by, followed, monitored) VALUES (?,?,?,?,?,?, 'ok', ?, 0, 0)",
+                "added_by, followed) VALUES (?,?,?,?,?,?, 'ok', ?, 0)",
                 (info["mbid"], info["name"], info["sort_name"], info["disambiguation"], info["country"],
                  now_iso(), username))
             threading.Thread(target=self._artist_image, args=(info["mbid"],), daemon=True).start()

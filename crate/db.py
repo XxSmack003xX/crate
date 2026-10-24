@@ -185,6 +185,9 @@ class DB:
                 self.conn.execute("UPDATE albums SET skip_reason = 'user' WHERE status = 'skipped' "
                                   "AND skip_reason IS NULL")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_albums_artist_status ON albums(artist_id, status)")
+            # 1.4.1: 1.4.0 created request-only artists with monitored = 0, which stopped their
+            # albums from ever being searched. Nothing else sets it to 0.
+            self.conn.execute("UPDATE artists SET monitored = 1 WHERE monitored = 0")
             ecols = {r[1] for r in self.conn.execute("PRAGMA table_info(events)")}
             if "username" not in ecols:  # 1.3: who did it
                 self.conn.execute("ALTER TABLE events ADD COLUMN username TEXT")

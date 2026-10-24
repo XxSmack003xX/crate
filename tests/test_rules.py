@@ -16,7 +16,8 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tests"))
-os.environ.update({"CRATE_TICK_SECONDS": "0.3", "CRATE_MB_INTERVAL": "0", "CRATE_UPDATE_CHECKS": "false"})
+os.environ.update({"CRATE_TICK_SECONDS": "0.3", "CRATE_MB_INTERVAL": "0", "CRATE_UPDATE_CHECKS": "false",
+                   "CRATE_SEARCH_SPACING": "0"})
 
 import mock_services  # noqa: E402
 
@@ -242,6 +243,19 @@ with ADMIN.open(urllib.request.Request(base + "/api/artists")) as resp:
     etag = resp.headers.get("ETag")
 r = call(JAMIE, "GET", "/api/artists", headers={"If-None-Match": etag})
 check(isinstance(r, list), "ETag is per user (another user's ETag doesn't match)")
+
+print("== requested albums actually get searched")
+api("DELETE", f"/api/artists/{jazz}")
+r = api("POST", "/api/albums/request", {"mbid": "rg-jazz"})
+check(r.get("created") and api("GET", f"/api/artists/{r['album']['artist_id']}")["artist"]["followed"] == 0,
+      "request for an artist not in Crate")
+# Only the requested albums are wanted, so the search order is predictable.
+app.db.x("UPDATE albums SET status = 'missing' WHERE status = 'wanted' AND title NOT IN "
+         "('Late Night Standards', 'Dawn Chorus')")
+api("PUT", "/api/settings", {"slskd_url": mock_url, "slskd_api_key": mock_services.API_KEY,
+                             "slskd_downloads_dir": os.path.join(tmp, "dl"), "max_active_searches": "2"})
+check(wait(lambda: {"Test Band Late Night Standards", "Night Owls Dawn Chorus"} <= set(state.search_log), 40),
+      f"searched: request-only artist and requested-then-followed artist ({state.search_log})")
 
 print()
 if failures:

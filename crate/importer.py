@@ -197,7 +197,7 @@ class LibraryImporter:
                 choice = next((a for a in res["alternatives"] if a["mbid"] == mbid), None)
                 existing = self.app.db.one("SELECT id, name, followed FROM artists WHERE mbid = ?", (mbid,))
                 if existing and existing.get("followed") == 0:  # had one-off requests only: follow it now
-                    self.app.db.x("UPDATE artists SET followed = 1, monitor = ?, monitor_since = ?, "
+                    self.app.db.x("UPDATE artists SET followed = 1, monitored = 1, monitor = ?, monitor_since = ?, "
                                   "local_name = COALESCE(local_name, ?), auto_download = ?, last_synced = NULL "
                                   "WHERE id = ?", (monitor, since, res["local_name"],
                                                    1 if auto_download else 0, existing["id"]))

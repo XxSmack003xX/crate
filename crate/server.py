@@ -119,6 +119,8 @@ def status(app, h, m, body):
         "configured": app.configured(),
         "slskd": app.slskd_status,
         "worker_error": app.worker_error,
+        "search_paused_min": (max(1, round((app.search_pause_until - time.monotonic()) / 60))
+                              if app.search_pause_until > time.monotonic() else None),
         "last_tick": app.last_tick,
         "counts": counts,
         "artists": app.db.one("SELECT COUNT(*) n FROM artists WHERE COALESCE(followed, 1) = 1")["n"],

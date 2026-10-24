@@ -458,6 +458,8 @@ function banner() {
   if (!status.configured) out += isAdmin() ? `<div class="banner"><div style="flex:1"><b>Connect slskd to start downloading.</b> Add your slskd address and API key in Settings.</div><a class="btn primary" href="#/settings">Open Settings</a></div>`
     : `<div class="banner"><div style="flex:1"><b>Downloads aren't set up yet.</b> An admin needs to connect slskd.</div></div>`;
   else if (status.slskd && status.slskd.ok === false) out += `<div class="banner bad"><div style="flex:1"><b>Can't use slskd right now.</b> ${esc(status.slskd.message)}</div>${isAdmin() ? `<a class="btn" href="#/settings">Settings</a>` : ""}</div>`;
+  else if (status.search_paused_min) out += `<div class="banner"><div style="flex:1"><b>New searches are paused for about ${status.search_paused_min} min</b> because slskd rejected a search. Crate tries again by itself.</div><a class="btn" href="#/activity">Activity</a></div>`;
+  if (status.worker_error && isAdmin()) out += `<div class="banner bad"><div style="flex:1"><b>Crate's background worker hit an error,</b> so searches and downloads may not be moving: <span class="mono">${esc(status.worker_error)}</span></div><a class="btn" href="#/activity">Activity</a></div>`;
   return out;
 }
 
@@ -854,7 +856,7 @@ async function viewQueue(first) {
   if (unchanged(first, [q, status && status.slskd])) return;
   const row = a => `<div class="row">${cover(a.mbid, a.title, 250)}
     <div style="min-width:0"><div class="t"><a href="#/artist/${a.artist_id}">${esc(a.artist_name)}</a> — ${esc(a.title)} <span class="sub">${esc(a.year || "")}</span></div>
-      <div class="d sub" style="font-size:13px">${esc(a.status_detail || "")}${a.status === "not_found" && a.next_retry ? ` · next try ${ago(a.next_retry)}` : ""}</div>
+      <div class="d sub" style="font-size:13px">${esc(a.status_detail || (a.status === "wanted" ? "Waiting for a search slot" : ""))}${a.status === "not_found" && a.next_retry ? ` · next try ${ago(a.next_retry)}` : ""}</div>
       ${a.status === "downloading" ? `<div class="prog"><i style="width:${a.progress || 0}%"></i></div>` : ""}</div>
     <div class="right" style="display:flex;gap:8px;align-items:center"><div style="display:flex;gap:4px">${albumActions(a)}</div>${pill(a)}</div></div>`;
   const waiting = q.waiting.filter(a => effStatus(a) !== "upcoming");
