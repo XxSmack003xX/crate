@@ -17,6 +17,9 @@ class SlskdError(Exception):
 _USE_APPLICATION_STATE = set()
 
 
+_NO_EVENTS = set()  # slskd base URLs without an event log (older versions)
+
+
 class Slskd:
     def __init__(self, url, api_key, timeout=30):
         self.base = url.rstrip("/") + "/api/v0"
@@ -133,6 +136,40 @@ class Slskd:
             for d in u.get("directories", []) or []:
                 for f in d.get("files", []) or []:
                     out.append(f)
+        return out
+
+    def completed_files(self, limit=1000):
+        """{(username, remote filename): local filename as slskd saved it}, from slskd's
+        event log (DownloadFileComplete). None if this slskd has no event log."""
+        if self.base in _NO_EVENTS:
+            return None
+        try:
+            data = self._req("GET", "/events", params={"offset": 0, "limit": limit}, allow_404=True)
+        except SlskdError as e:
+            if e.status in (400, 403, 405):
+                _NO_EVENTS.add(self.base)
+                return None
+            raise
+        if not isinstance(data, list):
+            if data is None:
+                _NO_EVENTS.add(self.base)
+            return None
+        out = {}
+        for ev in data:  # newest first
+            if not isinstance(ev, dict) or str(ev.get("type")) not in ("DownloadFileComplete", "2"):
+                continue
+            d = ev.get("data")
+            if isinstance(d, str):
+                try:
+                    d = json.loads(d)
+                except ValueError:
+                    continue
+            if not isinstance(d, dict):
+                continue
+            t = d.get("transfer") or {}
+            key = (t.get("username") or d.get("username") or "", d.get("remoteFilename") or t.get("filename") or "")
+            if d.get("localFilename") and key[1] and key not in out:
+                out[key] = d["localFilename"]
         return out
 
     def cancel_download(self, username, transfer_id, remove=True):

@@ -797,7 +797,8 @@ function albumActions(a) {
   const out = [];
   if (!can("downloads")) return "";
   if (["missing", "skipped"].includes(s) && (s !== "skipped" || isAdmin() || a.skip_reason === "before_follow")) out.push(b("download", "Download", "primary"));
-  if (["not_found", "failed"].includes(s)) out.push(b("retry", "Search again", "primary"));
+  if (a.can_reimport) out.push(b("reimport", s === "importing" ? "Look again" : "Import again", s === "failed" ? "primary" : ""));
+  if (["not_found", "failed"].includes(s)) out.push(b("retry", "Search again", a.can_reimport ? "" : "primary"));
   if (s === "wanted") out.push(b("retry", "Search now"));
   if (s === "downloading") out.push(b("next_source", "Try another source"));
   if (["have"].includes(s) && a.status_detail !== "Already in your library") out.push(b("retry", "Re-download", "ghost"));
@@ -1294,6 +1295,7 @@ async function viewGeneral() {
       t.innerHTML =
         (sl.ok ? line(sl.logged_in !== false, sl.logged_in !== false ? `slskd connected · Soulseek: ${esc(sl.state || "")}${sl.username ? " as " + esc(sl.username) : ""}` : `slskd reachable but not logged in to Soulseek (${esc(sl.state)})`) : line(false, esc(sl.error))) +
         line(r.slskd_downloads_dir.exists, `Downloads folder <span class="mono">${esc(r.slskd_downloads_dir.path)}</span> ${r.slskd_downloads_dir.exists ? (r.slskd_downloads_dir.writable ? "found" : "found, but not writable (needed to move files)") : "not found"}`) +
+        ((r.slskd_downloads_dir.unreadable || []).length ? line(false, `Crate can't open <span class="mono">${esc(r.slskd_downloads_dir.unreadable[0])}</span> (permission denied). Crate runs as ${esc(r.slskd_downloads_dir.crate_user || "?")}; make its PUID/PGID match slskd's.`) : "") +
         line(r.library_dir.exists && r.library_dir.writable, `Library <span class="mono">${esc(r.library_dir.path)}</span> ${r.library_dir.exists ? (r.library_dir.writable ? "found" : "found, but not writable") : "not found"}`);
     } catch (e) { t.innerHTML = `<div class="bad">${esc(e.message)}</div>`; }
   };

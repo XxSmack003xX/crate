@@ -13,6 +13,7 @@ from .core import ACTIVE, App
 from .db import DEFAULTS, SECRET_KEYS, now_iso
 from .dupes import DupeError
 from . import __version__
+from .locate import Finder
 from .slskd import Slskd, SlskdError
 from .updater import UpdateError
 
@@ -101,6 +102,7 @@ def _album_out(a):
                 pass
     if a.get("candidates"):
         a["candidates"] = [{k: v for k, v in c.items() if k != "files"} for c in a["candidates"]]
+    a["can_reimport"] = bool(a.get("dl_files")) and a.get("status") in ("failed", "importing")
     a.pop("dl_files", None)
     a["progress"] = None
     if a.get("status") == "downloading" and a.get("dl_size"):
@@ -171,6 +173,19 @@ def test_settings(app, h, m, body):
     for k in ("slskd_downloads_dir", "library_dir"):
         p = os.path.abspath(os.path.expanduser(body.get(k) or app.settings.raw()[k]))
         out[k] = {"path": p, "exists": os.path.isdir(p), "writable": os.access(p, os.W_OK) if os.path.isdir(p) else False}
+    dl = out["slskd_downloads_dir"]
+    if dl["exists"]:
+        # Folders slskd made that Crate can't open (usually a PUID/PGID mismatch).
+        f = Finder(dl["path"])
+        f.index()
+        dl["unreadable"] = f.unreadable[:5]
+        try:
+            st = os.stat(dl["path"])
+            dl["owner"] = f"{st.st_uid}:{st.st_gid}"
+        except OSError:
+            pass
+        if hasattr(os, "getuid"):
+            dl["crate_user"] = f"{os.getuid()}:{os.getgid()}"
     return out
 
 
@@ -320,7 +335,7 @@ def download_all(app, h, m, body):
     return {"ok": True, "count": res["queued"], **res}
 
 
-@route("POST", r"/api/albums/(\d+)/(download|retry|want|skip|next_source|recheck)", access="downloads")
+@route("POST", r"/api/albums/(\d+)/(download|retry|want|skip|next_source|recheck|reimport)", access="downloads")
 def album_action(app, h, m, body):
     action, me = m.group(2), h.me
     if action == "skip" and me["role"] != "admin":
@@ -338,6 +353,8 @@ def album_action(app, h, m, body):
         return _album_out(app.album_action(int(m.group(1)), action, username=me["username"]))
     except KeyError:
         raise HTTPError(404, "album not found")
+    except ValueError as e:
+        raise HTTPError(400, str(e))
 
 
 @route("GET", r"/api/queue", access="user", cache=("albums",))

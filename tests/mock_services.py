@@ -98,6 +98,10 @@ class State:
         self.reject_searches = False   # simulate slskd answering 400
         self.search_posts = 0
         self.server_calls = []
+        self.events = []            # slskd event log (newest last here; served newest first)
+        self.events_enabled = True  # older slskd versions have no /events
+        self.layout = "default"     # "username": slskd's subdirectory setting puts files under <user>/
+        self.slskd_root = "/app/downloads"  # where slskd thinks its downloads folder is
 
     def advance(self):
         now = time.time()
@@ -113,10 +117,20 @@ class State:
                         t["state"] = "Completed, Succeeded"
                         t["bytesTransferred"] = t["size"]
                         parts = re.split(r"[\\/]", t["filename"])
-                        dest = os.path.join(self.downloads, parts[-2], parts[-1])
+                        rel = ([user] if self.layout == "username" else []) + [parts[-2]]
+                        dest = os.path.join(self.downloads, *rel, parts[-1])
                         os.makedirs(os.path.dirname(dest), exist_ok=True)
+                        if os.path.exists(dest):  # like slskd: name_<UTC ticks>.ext
+                            stem, ext = os.path.splitext(dest)
+                            dest = f"{stem}_{638650000000000000 + self.next_id}{ext}"
                         with open(dest, "wb") as fh:
                             fh.write(b"\0" * t["size"])
+                        local = self.slskd_root + "/" + os.path.relpath(dest, self.downloads).replace(os.sep, "/")
+                        self.events.append({"id": f"e{len(self.events)}", "timestamp": "2026-10-26T12:00:00Z",
+                                            "type": "DownloadFileComplete", "data": json.dumps({
+                                                "localFilename": local, "remoteFilename": t["filename"],
+                                                "transfer": {"username": user, "filename": t["filename"],
+                                                             "size": t["size"]}})})
                     elif age > 1:
                         t["state"] = "InProgress"
                         t["bytesTransferred"] = t["size"] // 2
@@ -166,6 +180,11 @@ def make(state):
                     return self.send(200, {"state": "Disconnected", "isConnected": False, "isLoggedIn": False})
                 return self.send(200, {"state": "Connected, LoggedIn", "isConnected": True, "isLoggedIn": True,
                                        "username": "tester"})
+            if p == "/api/v0/events":
+                if not state.events_enabled:
+                    return self.send(404)
+                off, lim = int(qs.get("offset", ["0"])[0]), int(qs.get("limit", ["100"])[0])
+                return self.send(200, list(reversed(state.events))[off:off + lim])
             if p == "/api/v0/searches":
                 now = time.time()
                 return self.send(200, [{"id": s["id"], "searchText": s["text"],

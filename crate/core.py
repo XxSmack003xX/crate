@@ -26,6 +26,7 @@ from .auth import Auth
 from .importer import LibraryImporter
 from .updater import Updater
 from .library import Library
+from .locate import Finder, split_remote
 from .matcher import rank_candidates, search_queries
 from .mb import MusicBrainz
 from .slskd import Slskd, SlskdError
@@ -34,6 +35,22 @@ ACTIVE = ("searching", "queued", "downloading", "importing")
 # Minimum seconds between starting two Soulseek searches.
 SEARCH_SPACING = float(os.environ.get("CRATE_SEARCH_SPACING", "8"))
 BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+
+def _move(src, target):
+    """Move a file; if it can't be removed from the downloads folder, leave a copy there.
+    Returns False when the source was kept."""
+    try:
+        os.rename(src, target)
+        return True
+    except OSError:
+        pass
+    shutil.copy2(src, target)
+    try:
+        os.unlink(src)
+        return True
+    except OSError:
+        return False
 
 
 def _utcnow():
@@ -427,6 +444,12 @@ class App:
                                      candidates=None, candidate_index=0, tried_users="[]", attempts=0,
                                      next_retry=None, search_id=None,
                                      requested_by=username, requested_at=now_iso() if username else None)
+        elif action == "reimport":
+            if not a.get("dl_files"):
+                raise ValueError("Nothing downloaded to import; use Search again")
+            self.db.update_album(album_id, status="importing", status_detail="Looking for the downloaded files",
+                                 dl_last_change=now_iso())
+            self._import(self.slskd(), album_id)
         elif action == "skip":
             self._cancel_active(a)
             self.db.update_album(album_id, status="skipped", status_detail="Skipped by you", skip_reason="user")
@@ -782,25 +805,17 @@ class App:
         for a in self.db.q("SELECT id FROM albums WHERE status = 'importing'"):
             self._import(sl, a["id"])
 
-    @staticmethod
-    def _locate(root, f, index):
-        parts = [p for p in re.split(r"[\\/]", f["filename"]) if p]
-        name = parts[-1]
-        tries = []
-        if len(parts) >= 2:
-            tries.append(os.path.join(root, parts[-2], name))
-        if len(parts) >= 3:
-            tries.append(os.path.join(root, parts[-3], parts[-2], name))
-        tries.append(os.path.join(root, name))
-        for p in tries:
-            if os.path.isfile(p) and (not f["size"] or os.path.getsize(p) == f["size"]):
-                return p
-        if index is None:
-            return None
-        for p in index.get(name, []):
-            if not f["size"] or os.path.getsize(p) == f["size"]:
-                return p
-        return None
+    def _import_wait(self, a, waited, limit, why, missing=()):
+        """Keep looking for the files for `limit` seconds, then give up with the reason."""
+        why = why.rstrip(". ") + "."
+        if waited < limit:
+            self.db.update_album(a["id"], status_detail=f"Looking for the downloaded files: {why}")
+            return
+        names = ", ".join(split_remote(f["filename"])[-1] for f, _ in list(missing)[:5])
+        more = f" (+{len(missing) - 5} more)" if len(missing) > 5 else ""
+        self.db.update_album(a["id"], status="failed", status_detail=f"Couldn't import: {why} Fix it, then click Import again.")
+        self.db.event(f"Import failed for {a['artist_name']} – {a['title']}: {why}"
+                      + (f" Missing: {names}{more}" if names else ""), "error", album_id=a["id"], artist_id=a["artist_id"])
 
     def render_path(self, artist, album, year, primary_type):
         tpl = self.settings.folder_template or "{artist}/{album} ({year})"
@@ -822,31 +837,44 @@ class App:
             return
         files = _loads(a["dl_files"], [])
         root = os.path.abspath(os.path.expanduser(self.settings.slskd_downloads_dir))
-        index = None
-        located, missing = [], []
+        last = parse_iso(a["dl_last_change"]) or _utcnow()
+        waited = (_utcnow() - last).total_seconds()
+        if not os.path.isdir(root):
+            return self._import_wait(a, waited, 120, f"Crate can't see the downloads folder {root}. "
+                                     "Check the 'slskd downloads folder' setting and that it's mounted in Crate's container.")
+        finder = Finder(root)
+        saved, located, missing, taken = None, [], [], set()
         for f in files:
-            p = self._locate(root, f, None)
+            p, why = finder.find(f, a["dl_username"], None, taken)
             if not p:
-                if index is None:
-                    index = {}
-                    for dp, _, fns in os.walk(root):
-                        for fn in fns:
-                            index.setdefault(fn, []).append(os.path.join(dp, fn))
-                p = self._locate(root, f, index)
-            (located if p else missing).append((f, p))
+                if saved is None:
+                    try:
+                        saved = sl.completed_files() or {}
+                    except SlskdError:
+                        saved = {}
+                p, why = finder.find(f, a["dl_username"], saved, taken)
+            if p and not finder.readable(p):
+                p, why = None, f"Crate isn't allowed to read {p} (permission denied)"
+            if p:
+                taken.add(p)
+                located.append((f, p))
+            else:
+                missing.append((f, why))
         if missing:
-            last = parse_iso(a["dl_last_change"]) or _utcnow()
-            if (_utcnow() - last).total_seconds() < 600:
-                self.db.update_album(album_id, status_detail="Waiting for files to show up in the downloads folder")
-                return
-            self.db.update_album(album_id, status="failed", status_detail=(
-                f"slskd finished, but {len(missing)} file(s) weren't found under {root}. "
-                "Check the 'slskd downloads folder' setting, then click Retry."))
-            self.db.event(f"Import failed for {a['artist_name']} – {a['title']}: files not found in {root}",
-                          "error", album_id=album_id, artist_id=a["artist_id"])
-            return
+            perm = finder.unreadable or [w for _, w in missing if w and "permission" in w]
+            name = split_remote(missing[0][0]["filename"])[-1]
+            if finder.unreadable:
+                why = (f"Crate isn't allowed to open {finder.unreadable[0]} (permission denied). slskd saves files "
+                       "as a different user: make Crate's PUID/PGID match slskd's, or let others read them.")
+            elif perm:
+                why = perm[0] + ". Make Crate's PUID/PGID match slskd's."
+            else:
+                why = next((w for _, w in missing if w), None) or f'"{name}" isn\'t under {root}.'
+            found = f"Found {len(located)} of {len(files)} files. " if located else ""
+            return self._import_wait(a, waited, 120 if perm else 600, found + why, missing)
 
         mode = (self.settings.import_mode or "move").lower()
+        kept = []
         if mode == "off":
             dest = os.path.dirname(located[0][1])
         else:
@@ -860,14 +888,17 @@ class App:
                     if os.path.exists(target):
                         if os.path.getsize(target) == os.path.getsize(src):
                             if mode == "move":
-                                os.remove(src)
+                                try:
+                                    os.remove(src)
+                                except OSError:
+                                    kept.append(src)
                             continue
                         stem, ext = os.path.splitext(target)
                         target = f"{stem} (1){ext}"
                     if mode == "copy":
                         shutil.copy2(src, target)
-                    else:
-                        shutil.move(src, target)
+                    elif not _move(src, target):
+                        kept.append(src)
             except OSError as e:
                 self.db.update_album(album_id, status="failed", status_detail=f"Couldn't write to library: {e}")
                 self.db.event(f"Import failed for {a['title']}: {e}", "error", album_id=album_id)
@@ -890,6 +921,10 @@ class App:
         except SlskdError:
             pass
         self.library.add(a["artist_name"], a["title"], dest)
+        if kept:
+            self.db.event(f"{a['artist_name']} – {a['title']}: copied {len(kept)} file(s) into your library but couldn't "
+                          f"delete them from the downloads folder (permission denied). Make Crate's PUID/PGID match "
+                          f"slskd's so it can move files.", "warn", album_id=album_id, artist_id=a["artist_id"])
         cand = (_loads(a["candidates"], []) or [{}])
         cand = cand[a["candidate_index"] or 0] if (a["candidate_index"] or 0) < len(cand) else {}
         fmt = (cand.get("format") or "").upper()

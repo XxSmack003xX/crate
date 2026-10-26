@@ -379,6 +379,15 @@ Folders that pass are ranked by format (in your order of preference), how well t
 
 **Being polite to Soulseek.** Crate only searches while slskd is logged in to Soulseek. If slskd disconnects, Crate pauses all searches and downloads, shows a banner, and resumes by itself when slskd reconnects. Searches are spaced at least 8 seconds apart. If slskd rejects a search, Crate pauses new searches for 5 minutes, doubling up to 30 if it keeps happening, and never retries in a tight loop.
 
+### Finding the downloaded files
+
+When slskd finishes an album, Crate looks for the files:
+1. **Where slskd says it saved them.** Newer slskd versions keep an event log with each file's location. Crate maps that onto its own downloads folder, even when the two containers mount it at different paths (`/app/downloads` vs `/downloads`).
+2. **Where slskd puts them by default:** `<downloads>/<remote folder>/<file>`.
+3. **Anywhere in the downloads folder,** matching the file name and size. This covers slskd's *subdirectory* setting (such as a folder per username), names slskd renamed because the file already existed (`Song_638650….flac`), characters it replaced with `_`, and accented names stored differently.
+
+While it looks, the Queue says which files it found and which it's still missing, or why it can't use them (permission denied, wrong folder). After 10 minutes (2 minutes for permission problems) the album is marked **Failed** with that reason, and **Import again** retries without downloading again.
+
 ## Duplicate scanner
 
 ![Duplicates page](docs/screenshots/duplicates.png)
@@ -512,8 +521,9 @@ Everything Crate knows (artists, album states, settings) is in `crate-data/crate
 | *"Couldn't download the new image"* | Right after a release, the image takes about 3 minutes to build on GitHub, so try again shortly. *denied* means the image package isn't public. |
 | *"slskd refused … (403)"* | The key works, but its role isn't allowed to do this. Set `role: ReadWrite` (or `Administrator`) on the key in `slskd.yml` and restart slskd. Keys default to ReadOnly. Crate 1.2.1+ works with ReadWrite keys. |
 | *"Can't reach slskd at …"* | `SLSKD_URL` is wrong for where slskd runs. See the table in [setup B](#docker-setup-b-crate-with-an-slskd-you-already-run). From inside a container, `localhost` means the container itself, not your computer. |
-| Album **Failed**: *"files weren't found under /downloads"* | Crate isn't seeing slskd's downloads folder. Make sure both containers mount the **same host folder** (`DOWNLOADS_DIR`), then click **Search again**. |
-| *Permission denied* when importing | Set `PUID`/`PGID` in `.env` to the owner of your music and downloads folders, then run `docker compose up -d` again. |
+| Album stuck at **Importing**, or **Failed**: *"Couldn't import … isn't under /downloads"* | Crate isn't seeing slskd's downloads folder. Make sure both containers mount the **same host folder** (`DOWNLOADS_DIR`) and that the *slskd downloads folder* setting is where it's mounted **inside Crate**, then click **Import again**. **Settings → Test connection & folders** shows what Crate can see. |
+| *"Crate isn't allowed to open/read … (permission denied)"* | slskd saves files as a different user than Crate runs as. Set Crate's `PUID`/`PGID` in `.env` to the same user as slskd (and the owner of your music folder), then `docker compose up -d`. Click **Import again** on the album. |
+| Activity: *"copied … but couldn't delete them from the downloads folder"* | The album was imported, but Crate isn't allowed to delete slskd's copy. Same fix as above. |
 | Crate container keeps restarting, can't open database | `crate-data` was created by Docker as root. Run `sudo chown -R $(id -u):$(id -g) crate-data`. |
 | Everything is **Not found** | Try `preferred_formats` = `flac,mp3,m4a`, lower `min_bitrate`, or a longer `search_timeout`. Rare music may simply not be shared right now. Crate retries later. |
 | No artist pictures | Not every artist has a photo on Wikidata, so Crate shows album art instead. Pictures load in your browser, so it needs internet access. |
@@ -554,6 +564,7 @@ tests/
   test_auth.py       sign-in, roles, permissions, limits
   test_updater.py    updates against a fake Docker engine (success + rollback)
   test_rules.py      per-artist rules, new releases only, one-off album requests
+  test_import_files.py  finding downloaded files (slskd layouts, renames, permissions)
   bench_artists.py   Artists page speed with a big library (python3 tests/bench_artists.py 5000)
   fake_docker.py     in-memory Docker Engine API
 ```
