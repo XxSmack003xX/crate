@@ -27,7 +27,7 @@ from .importer import LibraryImporter
 from .updater import Updater
 from .library import Library
 from .locate import Finder, split_remote
-from .matcher import rank_candidates, search_queries
+from .matcher import explain, rank_candidates, search_queries
 from .mb import MusicBrainz
 from .slskd import Slskd, SlskdError
 
@@ -51,6 +51,14 @@ def _move(src, target):
         return True
     except OSError:
         return False
+
+
+def _note(n):
+    """'"Thriller": 41 folders from 30 users (25 tracklist didn't match, …)'"""
+    if not n.get("users"):
+        return f'"{n["q"]}": no results'
+    out = f'"{n["q"]}": {n["folders"]} folder{"" if n["folders"] == 1 else "s"} from {n["users"]} user{"" if n["users"] == 1 else "s"}'
+    return out + (f" ({n['why']})" if n.get("why") else "")
 
 
 def _utcnow():
@@ -631,12 +639,19 @@ class App:
             responses = sl.search_responses(a["search_id"])
             sl.delete_search(a["search_id"])
             tried = _loads(a["tried_users"], [])
+            stats = {}
             cands = rank_candidates(
                 responses, a["artist_name"], a["title"],
                 track_count=a["track_count"], track_titles=_loads(a["tracks"], []),
                 preferred_formats=self.settings.list("preferred_formats"),
                 min_bitrate=self.settings.int("min_bitrate"),
-                primary_type=a["primary_type"], exclude_users=tried)
+                primary_type=a["primary_type"], exclude_users=tried, stats=stats)
+            queries = search_queries(a["artist_name"], a["title"])
+            qi = a["query_index"] or 0
+            notes = _loads(a.get("search_notes"), []) if qi else []
+            notes.append({"q": queries[qi] if qi < len(queries) else "", "users": len(responses),
+                          "folders": stats.get("folders", 0), "why": explain(stats)})
+            self.db.update_album(a["id"], search_notes=json.dumps(notes[-5:]))
             if cands:
                 best = cands[0]
                 self.db.update_album(a["id"], status="queued", search_id=None, candidates=json.dumps(cands),
@@ -644,13 +659,12 @@ class App:
                                      status_detail=f"{len(cands)} source(s) found — best: {best['format'].upper()} "
                                                    f"from {best['username']}")
                 continue
-            queries = search_queries(a["artist_name"], a["title"])
-            qi = (a["query_index"] or 0) + 1
+            qi += 1
             if qi < len(queries):
                 self.db.update_album(a["id"], status="wanted", search_id=None, query_index=qi,
-                                     status_detail="No match yet; trying a broader search")
+                                     status_detail=f'Nothing usable for "{notes[-1]["q"]}"; trying "{queries[qi]}"')
             else:
-                self._not_found(a, f"No suitable source among {len(responses)} results")
+                self._not_found(a, "No suitable source. " + "; ".join(_note(n) for n in notes))
 
     def _not_found(self, a, reason):
         attempts = (a["attempts"] or 0) + 1
@@ -660,7 +674,7 @@ class App:
                              next_retry=retry, tried_users="[]", candidates=None,
                              dl_username=None, dl_files=None,
                              status_detail=reason)
-        self.db.event(f"{a['artist_name']} – {a['title']}: {reason.lower()}; retrying in {hours}h",
+        self.db.event(f"{a['artist_name']} – {a['title']}: {reason[:1].lower() + reason[1:]} — retrying in {hours}h",
                       "warn", album_id=a["id"], artist_id=a["artist_id"])
 
     # -- downloading

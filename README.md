@@ -365,17 +365,24 @@ Crate remembers each artist's folder name, so albums stored under a different sp
 
 ## How Crate picks a download
 
-Crate searches for `Artist Album`. If that finds nothing usable, it tries the album title alone, and still checks the artist against the folder path. For each search result, files are grouped by user and folder. Multi-disc albums split into `CD1`/`CD2` folders count as one album. A folder is **rejected** if:
+Crate tries up to three searches, stopping at the first that finds a usable folder:
+
+1. `Artist Album`, e.g. `Michael Jackson Thriller`.
+2. The album title alone, e.g. `Thriller`. Many folders don't name the artist. Some artists' names are also on Soulseek's list of excluded phrases, so any search that includes them comes back empty.
+3. The artist with a wildcard for each word's first letter, e.g. `*ichael *ackson Thriller`. This is a common Soulseek workaround for excluded names.
+
+For each search result, files are grouped by user and folder. Multi-disc albums split into `CD1`/`CD2` folders count as one album. A folder is **rejected** if:
 
 - it has fewer audio files than the album has tracks, or far more than expected
-- the album title isn't in the folder name, or the artist isn't anywhere in the path
+- the album title isn't in the folder name
+- the artist isn't anywhere in the path, **unless** the filenames match at least 75% of the real tracklist (with 3 or more tracks). Those folders rank below ones that name the artist
 - the filenames don't match the real tracklist from MusicBrainz, which filters out a different album that happens to have the right track count
 - it isn't in one of your formats (default `flac,mp3`), or it's an MP3 below your minimum bitrate (default 256 kbps)
 - it has locked files, or it comes from a user who already failed for this album
 
 Folders that pass are ranked by format (in your order of preference), how well the tracklist matches, whether the user has a free upload slot, queue length and upload speed.
 
-**When things go wrong.** If files fail, Crate retries them once from the same user. If they fail again, or a download makes no progress for 30 minutes (including waiting in the user's queue), Crate cancels it and moves to the next-best source. When every source has failed, the album is marked **Not found** and searched again after 24h, then 48h, and so on, up to once a week.
+**When things go wrong.** If files fail, Crate retries them once from the same user. If they fail again, or a download makes no progress for 30 minutes (including waiting in the user's queue), Crate cancels it and moves to the next-best source. When nothing usable turns up, or every source has failed, the album is marked **Not found**. The album shows what each search found, e.g. *"Michael Jackson Thriller": no results; "Thriller": 41 folders from 30 users (25 tracklist didn't match, 10 too few tracks)*. It's searched again after 24h, then 48h, and so on, up to once a week.
 
 **Being polite to Soulseek.** Crate only searches while slskd is logged in to Soulseek. If slskd disconnects, Crate pauses all searches and downloads, shows a banner, and resumes by itself when slskd reconnects. Searches are spaced at least 8 seconds apart. If slskd rejects a search, Crate pauses new searches for 5 minutes, doubling up to 30 if it keeps happening, and never retries in a tight loop.
 
@@ -565,6 +572,7 @@ tests/
   test_updater.py    updates against a fake Docker engine (success + rollback)
   test_rules.py      per-artist rules, new releases only, one-off album requests
   test_import_files.py  finding downloaded files (slskd layouts, renames, permissions)
+  test_search.py     search fallbacks and matching folders without the artist name
   bench_artists.py   Artists page speed with a big library (python3 tests/bench_artists.py 5000)
   fake_docker.py     in-memory Docker Engine API
 ```

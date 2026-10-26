@@ -178,6 +178,8 @@ class DB:
             if "requested_by" not in acols:  # 1.3: who asked for this download (daily limits)
                 self.conn.execute("ALTER TABLE albums ADD COLUMN requested_by TEXT")
                 self.conn.execute("ALTER TABLE albums ADD COLUMN requested_at TEXT")
+            if "search_notes" not in acols:  # 1.4.3: what each search found, for "not found" details
+                self.conn.execute("ALTER TABLE albums ADD COLUMN search_notes TEXT")
             if "skip_reason" not in acols:  # 1.4: why it's skipped: type | before_follow | user
                 self.conn.execute("ALTER TABLE albums ADD COLUMN skip_reason TEXT")
                 self.conn.execute("UPDATE albums SET skip_reason = 'type' WHERE status = 'skipped' "
