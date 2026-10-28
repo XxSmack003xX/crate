@@ -27,6 +27,7 @@ Add an artist and Crate pulls their full list of releases from MusicBrainz. It c
 - [Using Crate](#using-crate)
 - [Choosing what to fetch](#choosing-what-to-fetch)
 - [Importing the music you already have](#importing-the-music-you-already-have)
+- [Discover: recommendations](#discover-recommendations)
 - [How Crate picks a download](#how-crate-picks-a-download)
 - [Duplicate scanner](#duplicate-scanner)
 - [Configuration reference](#configuration-reference)
@@ -43,6 +44,7 @@ Add an artist and Crate pulls their full list of releases from MusicBrainz. It c
 - **Follow artists.** Search MusicBrainz from the web UI. Each result shows the artist's photo (from Wikidata) or album art, plus a few of their albums, so you can pick the right artist when several share a name.
 - **Full discographies.** Crate gets every release from MusicBrainz. You choose which types to follow: albums and EPs by default. Singles, live albums and compilations are skipped unless you turn them on, and you can always download or skip individual releases.
 - **Rules per artist.** Each artist can have its own release types, include or leave out live albums and compilations, and turn auto-download on or off. Follow **only new releases** to skip an artist's back catalogue.
+- **Recommendations.** The **Discover** page suggests artists similar to the ones you follow, from ListenBrainz (and Last.fm if you add a free key), ranked by how many of your artists they're like. Add them in one click. Each artist's page also shows **Fans also like**.
 - **One-off albums.** Search for an album and get just that one, without following the artist. You can follow them later.
 - **Never downloads what you already have.** Crate scans your music folder, using folder names and, when available, tags, and marks matching albums **In library**.
 - **Smart source picking.** Folders that are incomplete, at too low a bitrate, or have a tracklist that doesn't match the album are rejected. Of the rest, Crate prefers your best format, a free upload slot and a fast connection. If a source fails or stalls, it moves to the next one automatically.
@@ -291,6 +293,7 @@ Behind an HTTPS reverse proxy, cookies are marked `Secure` automatically when th
 | Page | What you can do |
 |---|---|
 | **Artists** | Search and add artists (**All releases** or **Only new releases**), or switch the search to **Albums** to get a single album. Filter and sort your artists (name, recently added, most missing, downloading, least complete); big libraries show 200 at a time with **Show more**. **Requested albums** lists one-off albums. **Rescan library** after adding music by hand, and **Import from library**. A banner links to **Missing albums** when there are albums waiting for you to choose. |
+| **Discover** | Artists similar to the ones you follow, with **Add** (All releases or Only new releases) and **Not interested**. See [below](#discover-recommendations). |
 | **Import from library** | Follow the artists already in your music folder. See [below](#importing-the-music-you-already-have). |
 | **Missing albums** | Albums by artists you follow that you don't have and that aren't set to download, grouped by artist. **Download** one, **Download all** for an artist, **Download all** overall, or **Skip**. |
 | **Artist page** | Tabs for Albums, EPs, Singles and Other. **Download all missing**, **Refresh discography**, **What to fetch…** (admins, see [below](#choosing-what-to-fetch)), and per-release **Download**, **Skip**, **Search again**, **Try another source** and **I have this** (re-checks your library for that album). Artists you only requested albums from show a **Follow artist** button. |
@@ -328,6 +331,21 @@ Removing an artist never deletes files from disk.
 - The artist gets a page with only the albums you requested, and those albums are listed under **Requested albums** on the Artists page.
 - **Follow artist** on that page starts following them normally, and your requests are kept.
 - Users need **Download albums** permission, and each request counts towards their daily limit.
+
+## Discover: recommendations
+
+**Discover** lists artists similar to the ones you follow. Each card says which of your artists it's like ("Like Radiohead, Portishead and Massive Attack") and shows a couple of their best-known albums.
+
+- **Ranking:** an artist similar to several of yours ranks above one that's very similar to only one.
+- **Add** follows the artist, with **When adding** set to *All releases* or *Only new releases*. Artists you follow never appear.
+- **Not interested** hides an artist for everyone. Admins can bring them back from **Settings → Recommendations**.
+- **Fans also like:** every artist's page shows a strip of similar artists, with the same **Add** button.
+
+**Where the suggestions come from:**
+- [ListenBrainz](https://listenbrainz.org) similar artists, based on what people listen to together. No account is needed, and it uses MusicBrainz ids like the rest of Crate.
+- Optionally [Last.fm](https://www.last.fm/api/account/create): paste a free API key in **Settings → Recommendations** and its suggestions are blended in. This helps with smaller artists.
+
+Crate checks one followed artist at a time in the background, newest first, and keeps the results for two weeks. With a big library the page fills in over a few minutes, and a banner shows how far it has got. Turn the page off in **Settings → Recommendations** if you don't want Crate contacting these services. Users without **Follow new artists** can see recommendations but not add or dismiss them.
 
 ## Importing the music you already have
 
@@ -454,6 +472,8 @@ Every setting can be changed in the web UI. Settings can also be preset with env
 | `retry_hours` | `24` | |
 | `sync_hours` | `24` | how often to check artists for new releases |
 | `mb_contact` | | an email or URL for the MusicBrainz User-Agent |
+| `recommendations` | `true` | the Discover page (asks ListenBrainz for similar artists) |
+| `lastfm_api_key` | | optional; blends Last.fm's similar artists into Discover |
 
 Process options (environment only): `CRATE_PORT` (`9325`), `CRATE_HOST` (`0.0.0.0`), `CRATE_DB` (`./data/crate.db`, `/data/crate.db` in Docker) and `CRATE_SEARCH_SPACING` (`8` seconds).
 
@@ -573,6 +593,7 @@ tests/
   test_rules.py      per-artist rules, new releases only, one-off album requests
   test_import_files.py  finding downloaded files (slskd layouts, renames, permissions)
   test_search.py     search fallbacks and matching folders without the artist name
+  test_recs.py       recommendations: ListenBrainz/Last.fm, ranking, add, not interested
   bench_artists.py   Artists page speed with a big library (python3 tests/bench_artists.py 5000)
   fake_docker.py     in-memory Docker Engine API
 ```

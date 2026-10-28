@@ -132,6 +132,15 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: v
 .meter { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 7px; }
 .meter i { display: block; height: 100%; background: var(--have); border-radius: 2px; transition: width .4s; }
 .meter.dl i { background: var(--active); }
+.rcard { display: flex; flex-direction: column; min-width: 0; }
+.rcard > a { text-decoration: none; color: inherit; }
+.rcard .name { font-weight: 700; margin-top: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rcard .why { font-size: 12.5px; color: var(--muted); margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.6em; }
+.rcard .known { font-size: 12px; color: var(--muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.3em; }
+.rcard .known b { color: var(--ink); font-weight: 550; }
+.rcard .acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.simrow { display: grid; grid-auto-flow: column; grid-auto-columns: 132px; gap: 14px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: thin; }
+.simrow .rcard .name { font-size: 14px; margin-top: 8px; }
 .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--active); animation: pulse 1.4s infinite; }
 @keyframes pulse { 50% { opacity: .3; } }
 
@@ -356,6 +365,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: v
     <a class="logo" href="#/"><span class="disc"></span>Crate</a>
     <nav id="nav">
       <a href="#/" data-v="artists">Artists</a>
+      <a href="#/discover" data-v="discover">Discover</a>
       <a href="#/queue" data-v="queue">Queue <span class="badge" id="qbadge" hidden></span></a>
       <a href="#/duplicates" data-v="duplicates" data-admin>Duplicates</a>
       <a href="#/activity" data-v="activity">Activity</a>
@@ -730,7 +740,9 @@ async function viewArtist(id, first) {
       <span class="sp"></span>
       ${hidden && ["all", "Album", "EP"].includes(artistTab) ? `<label><input type="checkbox" id="skp" ${showSkipped ? "checked" : ""}> Show ${hidden} skipped</label>` : ""}
     </div>
-    <div class="albums">${list.length ? list.map(a => albumRow(a)).join("") : `<div class="blank">${syncing ? "Loading releases…" : "Nothing here."}</div>`}</div>`;
+    <div class="albums">${list.length ? list.map(a => albumRow(a)).join("") : `<div class="blank">${syncing ? "Loading releases…" : "Nothing here."}</div>`}</div>
+    <div id="simbox"></div>`;
+  renderSimilar(id, first);
   view.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { artistTab = b.dataset.tab; render(true); });
   view.querySelectorAll("[data-follow]").forEach(b => b.onclick = async () => {
     b.disabled = true;
@@ -852,6 +864,122 @@ function bindClearSearches() {
 }
 
 /* ---------------- queue ---------------- */
+/* Similar artists strip on an artist's page (cached so polling re-renders don't flicker). */
+const simCache = new Map();
+function renderSimilar(id, fresh = false) {
+  const box = $("#simbox"); if (!box) return;
+  const d = simCache.get(id);
+  if (d && d.items.length) {
+    box.innerHTML = `<h2>Fans also like</h2><div class="simrow">${d.items.map(r => recCard(r, { why: false, dismiss: false })).join("")}</div>`;
+    bindRecActions(box, () => { simCache.delete(id); renderSimilar(id); });
+    loadRecInfo(d.items.map(r => r.mbid));
+  }
+  if (fresh || !d || !d.fetched || Date.now() - d.at > 60000) api(`/api/artists/${id}/similar`).then(r => {
+    const old = simCache.get(id);
+    simCache.set(id, { ...r, at: Date.now() });
+    if (!old || JSON.stringify(old.items) !== JSON.stringify(r.items)) { if (location.hash === "#/artist/" + id) renderSimilar(id); }
+  }).catch(() => {});
+}
+
+/* ---------------- discover ---------------- */
+const recInfo = new Map();   // mbid -> artist_info (picture + notable releases), shared by every page
+let recLimit = 60, recKey = "";
+async function loadRecInfo(mbids) {
+  const todo = mbids.filter(m => !recInfo.has(m));
+  todo.forEach(m => recInfo.set(m, null));
+  let next = 0;
+  const worker = async () => {
+    while (next < todo.length) {
+      const m = todo[next++];
+      let info = {};
+      try { info = await api(`/api/mb/artists/${encodeURIComponent(m)}/info`); } catch {}
+      recInfo.set(m, info);
+      document.querySelectorAll(`[data-rinfo="${CSS.escape(m)}"]`).forEach(el => fillRec(el, info));
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+}
+function recArt(r) {
+  const info = recInfo.get(r.mbid);
+  const srcs = [];
+  if (info && info.image) srcs.push({ url: sized(info.image, 320), photo: true });
+  ((info && info.covers) || []).forEach(m => srcs.push({ url: caa(m), label: "Album art" }));
+  return art(srcs, r.name, info === undefined || info === null ? "loading" : "");
+}
+function fillRec(el, info) {
+  const r = { mbid: el.dataset.rinfo, name: el.dataset.name };
+  const slot = el.querySelector(".rart"); if (slot) slot.innerHTML = recArt(r);
+  const k = el.querySelector(".known");
+  if (k) k.innerHTML = info && info.albums && info.albums.length ? info.albums.slice(0, 2).map(x => `<b>${esc(x.title)}</b>${x.year ? ` (${esc(x.year)})` : ""}`).join(" · ") : "";
+}
+function recCard(r, opts = {}) {
+  const info = recInfo.get(r.mbid);
+  const href = r.artist_id ? `#/artist/${r.artist_id}` : `https://musicbrainz.org/artist/${encodeURIComponent(r.mbid)}`;
+  const ext = r.artist_id ? "" : ` target="_blank" rel="noopener"`;
+  const why = opts.why === false ? "" : `<div class="why">${r.because && r.because.length ? `Like ${r.because.map(esc).join(", ").replace(/, ([^,]*)$/, " and $1")}` : esc(r.type || "")}</div>`;
+  let acts = "";
+  if (r.followed) acts = `<a class="btn sm ghost" href="#/artist/${r.artist_id}">Following</a>`;
+  else if (can("artists")) acts = `<button class="btn primary sm" data-radd="${esc(r.mbid)}" data-name="${esc(r.name)}">${r.artist_id ? "Follow" : "Add"}</button>` +
+    (opts.dismiss === false ? "" : `<button class="btn ghost sm" data-rdis="${esc(r.mbid)}" title="Don't recommend this artist again">Not interested</button>`);
+  return `<div class="rcard" data-rinfo="${esc(r.mbid)}" data-name="${esc(r.name)}">
+    <a href="${href}"${ext} title="${r.artist_id ? "Open in Crate" : "Open on MusicBrainz"}"><span class="rart">${recArt(r)}</span>
+      <div class="name" title="${esc(r.name)}">${esc(r.name)}</div></a>${why}
+    <div class="known">${info && info.albums ? info.albums.slice(0, 2).map(x => `<b>${esc(x.title)}</b>${x.year ? ` (${esc(x.year)})` : ""}`).join(" · ") : ""}</div>
+    <div class="acts">${acts}</div></div>`;
+}
+function bindRecActions(root, after) {
+  root.querySelectorAll("[data-radd]").forEach(b => b.onclick = async () => {
+    b.disabled = true; b.textContent = "Adding…";
+    try {
+      const r = await api("/api/artists", { method: "POST", body: { mbid: b.dataset.radd, monitor: addMonitor } });
+      toast(`Following ${r.artist.name}${addMonitor === "new" ? " — new releases only" : " — fetching discography"}`);
+      after && after();
+    } catch (e) { toast(e.message); b.disabled = false; b.textContent = "Add"; }
+  });
+  root.querySelectorAll("[data-rdis]").forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await api("/api/recommendations/dismiss", { method: "POST", body: { mbid: b.dataset.rdis } }); b.closest(".rcard").remove(); after && after(); }
+    catch (e) { toast(e.message); b.disabled = false; }
+  });
+}
+async function viewDiscover(first) {
+  const d = await api("/api/recommendations");
+  if (first) {
+    recKey = ""; recLimit = 60;
+    view.innerHTML = `<div class="toolbar"><h1 class="grow">Discover</h1>
+        <label class="sub" style="display:flex;gap:6px;align-items:center;font-size:13px" ${can("artists") ? "" : "hidden"}>When adding
+          <select class="sel" id="dmon"><option value="all">All releases</option><option value="new">Only new releases</option></select></label></div>
+      <div class="sub" id="dsub" style="margin:4px 0 18px"></div><div id="dban"></div><div id="dgrid"></div><div class="more" id="dmore"></div>`;
+    const mon = $("#dmon"); mon.value = addMonitor;
+    mon.onchange = () => { addMonitor = mon.value; ls.set("crate.addMonitor", addMonitor); };
+  }
+  const key = JSON.stringify([d, recLimit]);
+  if (key === recKey) return;
+  recKey = key;
+  const p = d.progress || {};
+  $("#dsub").textContent = `Artists similar to the ones you follow, from ListenBrainz${d.lastfm ? " and Last.fm" : ""}. The more of your artists an artist is similar to, the higher it ranks.`;
+  let ban = "";
+  if (!d.enabled) ban = `<div class="banner"><div style="flex:1"><b>Recommendations are turned off.</b>${isAdmin() ? " Turn them on in Settings." : ""}</div>${isAdmin() ? `<a class="btn" href="#/settings">Settings</a>` : ""}</div>`;
+  else if (p.total && p.checked < p.total) ban = `<div class="banner"><span class="pulse"></span><div style="flex:1">Finding similar artists: checked <b>${p.checked}</b> of your <b>${p.total}</b> artists. More recommendations appear as it goes.</div></div>`;
+  if (p.error && d.enabled) ban += `<div class="banner bad"><div style="flex:1"><b>Couldn't reach the recommendation service:</b> ${esc(p.error)}. Crate will try again.</div></div>`;
+  $("#dban").innerHTML = ban;
+  const g = $("#dgrid");
+  if (!d.items.length) {
+    g.className = "";
+    g.innerHTML = d.enabled ? `<div class="blank"><div class="big">${p.total ? "No recommendations yet" : "Follow some artists first"}</div>${p.total ? "Similar artists show up here as Crate checks the artists you follow." : "Recommendations are based on the artists you follow."}</div>` : "";
+    $("#dmore").innerHTML = "";
+    return;
+  }
+  const shown = d.items.slice(0, recLimit);
+  g.className = "grid";
+  g.innerHTML = shown.map(r => recCard(r)).join("");
+  bindRecActions(g, () => viewDiscover(false).catch(() => {}));
+  const rest = d.items.length - shown.length;
+  $("#dmore").innerHTML = rest > 0 ? `<button class="btn" id="dmorebtn">Show more <span class="sub">· ${rest} left</span></button>` : "";
+  const mb = $("#dmorebtn"); if (mb) mb.onclick = () => { recLimit += 60; viewDiscover(false).catch(() => {}); };
+  loadRecInfo(shown.map(r => r.mbid));
+}
+
 async function viewQueue(first) {
   const q = await api("/api/queue");
   if (unchanged(first, [q, status && status.slskd])) return;
@@ -1255,6 +1383,12 @@ async function viewGeneral() {
       <div class="field"><label for="f-auto_download">Download automatically</label>
         <div class="checks"><label><input type="checkbox" id="f-auto_download" ${["true", "1", "yes", "on"].includes(String(s.auto_download).toLowerCase()) ? "checked" : ""}> Start downloading missing releases as soon as an artist is added</label></div></div>
     </div>
+    <div class="fs"><h3>Recommendations</h3><p>The Discover page suggests artists similar to the ones you follow, using <a href="https://listenbrainz.org" target="_blank" rel="noopener">ListenBrainz</a>. A free <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Last.fm API key</a> adds Last.fm's suggestions too.</p>
+      <div class="field"><label for="f-recommendations">Discover page</label>
+        <div class="checks"><label><input type="checkbox" id="f-recommendations" ${["true", "1", "yes", "on"].includes(String(s.recommendations).toLowerCase()) ? "checked" : ""}> Find artists similar to the ones you follow</label></div></div>
+      ${f("lastfm_api_key", "Last.fm API key", "Optional", "password")}
+      <div class="field"><span></span><div><button type="button" class="btn ghost" id="recreset">Bring back artists marked “Not interested”</button></div></div>
+    </div>
     <div class="fs"><h3>Quality</h3>
       ${f("preferred_formats", "Formats, best first", "Only these are accepted, e.g. <span class='mono'>flac,mp3</span> or <span class='mono'>mp3</span>")}
       ${f("min_bitrate", "Minimum MP3 bitrate", "kbps — lower-quality lossy sources are ignored", "number", "min=64 max=320")}
@@ -1277,6 +1411,7 @@ async function viewGeneral() {
     form.querySelectorAll("input[name], select[name]").forEach(i => out[i.name] = i.value.trim());
     out.release_types = [...form.querySelectorAll("[data-type]")].filter(c => c.checked).map(c => c.dataset.type).join(",");
     out.auto_download = $("#f-auto_download").checked ? "true" : "false";
+    out.recommendations = $("#f-recommendations").checked ? "true" : "false";
     return out;
   };
   form.onsubmit = async e => {
@@ -1286,6 +1421,7 @@ async function viewGeneral() {
   };
   form.addEventListener("input", () => $("#savemsg").textContent = "Unsaved changes");
   bindClearSearches();
+  $("#recreset").onclick = async () => { try { await api("/api/recommendations/reset", { method: "POST" }); toast("Dismissed artists can be recommended again"); } catch (e) { toast(e.message); } };
   $("#test").onclick = async () => {
     const t = $("#tres"); t.innerHTML = `<span class="sub">Testing…</span>`;
     try {
@@ -1468,6 +1604,7 @@ async function render(first = false) {
     else if (v === "duplicates") await viewDupes(first);
     else if (v === "import") await viewImport(first);
     else if (v === "missing") await viewMissing(first);
+    else if (v === "discover") await viewDiscover(first);
     else if (v === "settings") { if (first) await viewSettings(id || "general"); }
     else await viewArtists(first);
   } catch (e) { view.innerHTML = `<div class="blank"><div class="big">Something went wrong</div>${esc(e.message)}</div>`; }

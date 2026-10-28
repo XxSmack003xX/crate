@@ -29,6 +29,7 @@ from .library import Library
 from .locate import Finder, split_remote
 from .matcher import explain, rank_candidates, search_queries
 from .mb import MusicBrainz
+from .recommend import Recommender
 from .slskd import Slskd, SlskdError
 
 ACTIVE = ("searching", "queued", "downloading", "importing")
@@ -84,6 +85,7 @@ class App:
         self.db = DB(db_path)
         self.settings = Settings(self.db)
         self.mb = MusicBrainz(self.settings)
+        self.recs = Recommender(self)
         self.library = Library(self.settings)
         self.dupes = DupeScanner(self)
         self.importer = LibraryImporter(self)
@@ -216,6 +218,12 @@ class App:
                 return self.follow_artist(existing["id"], added_by, monitor, auto_download)
             return existing, False
         info = self.mb.get_artist(mbid)
+        if info["mbid"] != mbid:  # MusicBrainz merged this artist; it may already be here under its new id
+            canonical = self.db.one("SELECT * FROM artists WHERE mbid = ?", (info["mbid"],))
+            if canonical:
+                if canonical.get("followed") == 0:
+                    return self.follow_artist(canonical["id"], added_by, monitor, auto_download)
+                return canonical, False
         aid = self.db.x(
             "INSERT INTO artists (mbid, name, sort_name, disambiguation, country, added_at, sync_status, "
             "added_by, auto_download, monitor, monitor_since) VALUES (?,?,?,?,?,?, 'pending', ?, ?, ?, ?)",
@@ -226,6 +234,7 @@ class App:
         self.db.event(f"Added artist {info['name']}" + (f" (by {added_by})" if added_by else ""),
                       artist_id=aid, username=added_by)
         threading.Thread(target=self.sync_artist, args=(aid,), daemon=True).start()
+        self.recs.wake.set()
         return self.db.one("SELECT * FROM artists WHERE id = ?", (aid,)), True
 
     def remove_artist(self, artist_id):
@@ -343,6 +352,7 @@ class App:
         self.db.event(f"Now following {artist['name']}" + (f" (by {username})" if username else ""),
                       artist_id=artist_id, username=username)
         threading.Thread(target=self.sync_artist, args=(artist_id,), daemon=True).start()
+        self.recs.wake.set()
         return self.db.one("SELECT * FROM artists WHERE id = ?", (artist_id,)), True
 
     def request_album(self, rg_mbid, username=None):
@@ -491,6 +501,7 @@ class App:
 
     # ---------------------------------------------------------------- worker
     def run_worker(self):
+        threading.Thread(target=self.recs.loop, args=(self.stop,), daemon=True, name="recommendations").start()
         while not self.stop.is_set():
             try:
                 self.tick()

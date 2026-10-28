@@ -147,8 +147,13 @@ def put_settings(app, h, m, body):
         if vals.get(k, "").startswith("•"):
             vals.pop(k)
     before = {k: app.settings.raw()[k] for k in ("release_types", "exclude_secondary")}
+    lastfm_before = app.settings.raw().get("lastfm_api_key")
     app.db.save_settings(vals)
     app.check_slskd()
+    if app.settings.raw().get("lastfm_api_key") != lastfm_before:
+        # Re-fetch similar artists so Last.fm's are blended in (or taken out).
+        app.db.x("UPDATE similar SET fetched_at = '2000-01-01T00:00:00+00:00'")
+        app.recs.wake.set()
     if any(app.settings.raw()[k] != v for k, v in before.items()):
         # Re-sort missing/skipped albums of artists that follow the global rules.
         threading.Thread(target=app.reapply_all, daemon=True).start()
@@ -252,6 +257,36 @@ def follow_artist(app, h, m, body):
     except KeyError:
         raise HTTPError(404, "artist not found")
     return {"artist": artist, "changed": changed}
+
+
+@route("GET", r"/api/recommendations", access="user", cache=("artists", "similar", "rec_dismissed"))
+def recommendations(app, h, m, body):
+    on = app.settings.bool("recommendations")
+    return {"enabled": on, "items": app.recs.recommendations() if on else [], "progress": app.recs.progress(),
+            "lastfm": bool(app.settings.raw().get("lastfm_api_key"))}
+
+
+@route("POST", r"/api/recommendations/dismiss", access="artists")
+def recommendations_dismiss(app, h, m, body):
+    mbid = (body or {}).get("mbid")
+    if not mbid:
+        raise HTTPError(400, "mbid required")
+    app.recs.dismiss(mbid, h.me["username"])
+    return {"ok": True}
+
+
+@route("POST", r"/api/recommendations/reset")
+def recommendations_reset(app, h, m, body):
+    app.recs.undismiss_all()
+    return {"ok": True}
+
+
+@route("GET", r"/api/artists/(\d+)/similar", access="user", cache=("artists", "similar"))
+def artist_similar(app, h, m, body):
+    a = app.db.one("SELECT mbid FROM artists WHERE id = ?", (int(m.group(1)),))
+    if not a:
+        raise HTTPError(404, "artist not found")
+    return app.recs.similar_to(a["mbid"])
 
 
 @route("GET", r"/api/mb/albums", access="user")

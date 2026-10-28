@@ -61,6 +61,17 @@ CREATE TABLE IF NOT EXISTS albums (
 );
 CREATE INDEX IF NOT EXISTS idx_albums_status ON albums(status);
 CREATE INDEX IF NOT EXISTS idx_albums_artist ON albums(artist_id);
+-- Similar artists per followed artist (ListenBrainz / Last.fm), for recommendations.
+CREATE TABLE IF NOT EXISTS similar (
+    artist_mbid TEXT PRIMARY KEY,
+    data        TEXT,
+    fetched_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS rec_dismissed (
+    mbid         TEXT PRIMARY KEY,
+    username     TEXT,
+    dismissed_at TEXT
+);
 CREATE TABLE IF NOT EXISTS artist_info (
     mbid       TEXT PRIMARY KEY,
     data       TEXT,
@@ -124,11 +135,14 @@ DEFAULTS = {
     "folder_template": "{artist}/{album} ({year})",
     "sync_hours": "24",
     "auto_download": "true",
+    # Discover page: similar artists from ListenBrainz (+ Last.fm if you add a key).
+    "recommendations": "true",
+    "lastfm_api_key": "",
     "mb_contact": "crate-self-hosted",
     "mb_url": "https://musicbrainz.org/ws/2",
 }
 
-SECRET_KEYS = {"slskd_api_key"}
+SECRET_KEYS = {"slskd_api_key", "lastfm_api_key"}
 _WRITE_RE = re.compile(r"^\s*(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|UPDATE|DELETE\s+FROM)\s+(\w+)", re.I)
 
 

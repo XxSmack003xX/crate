@@ -98,6 +98,15 @@ class State:
         self.reject_searches = False   # simulate slskd answering 400
         self.search_posts = 0
         self.server_calls = []
+        # ListenBrainz similar artists: seed mbid -> [(mbid, name, score)]
+        self.similar = {
+            "a-1": [("a-3", "Night Owls", 900), ("r-1", "Glass Harbour", 700), ("r-2", "Paper Kites Club", 300)],
+            "a-2": [("r-1", "Glass Harbour", 500), ("r-3", "Velvet Static", 450)],
+        }
+        self.lb_fail = False
+        self.lb_calls = []
+        self.lastfm = {"a-1": [("r-4", "Lantern Choir", "0.9"), ("", "No MBID Band", "0.8")]}
+        self.lastfm_calls = []
         self.events = []            # slskd event log (newest last here; served newest first)
         self.events_enabled = True  # older slskd versions have no /events
         self.layout = "default"     # "username": slskd's subdirectory setting puts files under <user>/
@@ -159,6 +168,20 @@ def make(state):
             p = u.path
             if p.startswith("/ws/2/"):
                 return self.mb(p[6:], qs)
+            if p == "/similar-artists/json":  # ListenBrainz labs
+                mbid = qs.get("artist_mbids", [""])[0]
+                state.lb_calls.append((mbid, qs.get("algorithm", [""])[0]))
+                if state.lb_fail:
+                    return self.send(503, {"error": "down"})
+                return self.send(200, [{"artist_mbid": m, "name": n, "type": "Group", "comment": "", "gender": None,
+                                        "score": sc, "reference_mbid": mbid} for m, n, sc in state.similar.get(mbid, [])])
+            if p == "/2.0/":  # Last.fm
+                state.lastfm_calls.append(dict((k, v[0]) for k, v in qs.items()))
+                if qs.get("api_key", [""])[0] != "lfm-key":
+                    return self.send(200, {"error": 10, "message": "Invalid API key"})
+                arts = state.lastfm.get(qs.get("mbid", [""])[0], [])
+                return self.send(200, {"similarartists": {"artist": [{"name": n, "mbid": m, "match": sc, "url": ""}
+                                                                     for m, n, sc in arts]}})
             if p == "/w/api.php":  # Wikidata wbgetclaims
                 state.wikidata_calls.append((qs["entity"][0], qs["property"][0]))
                 if qs["entity"][0] == "Q42" and qs["property"][0] == "P18":
@@ -279,6 +302,11 @@ def make(state):
                     out["release-groups"] = [{"id": g[0], "title": g[1], "primary-type": g[2], "secondary-types": g[3],
                                               "first-release-date": g[4]} for g in OWL_GROUPS]
                 return self.send(200, out)
+            if path.startswith("artist/r-") or path.startswith("artist/merged-"):  # test_recs
+                rid = path.split("/")[1].replace("merged-", "")  # merged ids redirect to the current one
+                names = {"r-1": "Glass Harbour", "r-2": "Paper Kites Club", "r-3": "Velvet Static", "r-4": "Lantern Choir"}
+                return self.send(200, {"id": rid, "name": names.get(rid, rid), "sort-name": names.get(rid, rid),
+                                       "disambiguation": "", "country": "", "relations": [], "release-groups": []})
             if path.startswith("artist/"):
                 art = ARTIST2 if path.endswith("a-2") else ARTIST
                 out = dict(art)
@@ -340,4 +368,8 @@ def start(downloads_dir, port=0):
     state = State(downloads_dir)
     srv = ThreadingHTTPServer(("127.0.0.1", port), make(state))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
+    # Keep the recommendations thread off the real ListenBrainz / Last.fm during tests.
+    url = f"http://127.0.0.1:{srv.server_address[1]}"
+    os.environ.setdefault("CRATE_LISTENBRAINZ_URL", url)
+    os.environ.setdefault("CRATE_LASTFM_URL", url + "/2.0/")
     return srv, state

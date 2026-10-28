@@ -44,6 +44,7 @@ jobs:
           python tests/test_rules.py
           python tests/test_import_files.py
           python tests/test_search.py
+          python tests/test_recs.py
 
   image:
     needs: test
