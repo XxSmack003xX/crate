@@ -121,6 +121,7 @@ def status(app, h, m, body):
         "configured": app.configured(),
         "slskd": app.slskd_status,
         "worker_error": app.worker_error,
+        "searches_paused": app.searches_paused(),
         "search_paused_min": (max(1, round((app.search_pause_until - time.monotonic()) / 60))
                               if app.search_pause_until > time.monotonic() else None),
         "last_tick": app.last_tick,
@@ -419,6 +420,17 @@ def clear_searches(app, h, m, body):
     if not app.configured():
         raise HTTPError(400, "Connect slskd in Settings first")
     return app.clear_searches()
+
+
+@route("POST", r"/api/searches/reset")
+def searches_reset(app, h, m, body):
+    return app.reset_searches(h.me["username"])
+
+
+@route("POST", r"/api/searches/pause")
+def searches_pause(app, h, m, body):
+    app.pause_searches(bool((body or {}).get("paused", True)), h.me["username"])
+    return {"paused": app.searches_paused()}
 
 
 @route("GET", r"/api/import")

@@ -135,6 +135,8 @@ DEFAULTS = {
     "folder_template": "{artist}/{album} ({year})",
     "sync_hours": "24",
     "auto_download": "true",
+    # Queue → Pause searching (internal; downloads keep going).
+    "searches_paused": "false",
     # Discover page: similar artists from ListenBrainz (+ Last.fm if you add a key).
     "recommendations": "true",
     "lastfm_api_key": "",

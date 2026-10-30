@@ -136,6 +136,79 @@ check('"Michael Jackson Bad": no results' in d and '"Bad": no results' in d and 
 ev = app.db.one("SELECT message FROM events WHERE album_id = ? ORDER BY id DESC", (bad,))
 check(ev and "no suitable source" in ev["message"] and "retrying in" in ev["message"], "logged in Activity")
 
+print("== pause, resume and reset")
+deleted = []
+FakeSlskd.delete_search = lambda self, sid: deleted.append(sid)
+otw = album("Off the Wall", ["Don't Stop 'Til You Get Enough", "Rock with You", "Off the Wall", "Girlfriend"])
+sl = FakeSlskd({})
+app.pause_searches(True, "admin")
+app.last_search_start = 0
+app._start_searches(sl)
+check(app.searches_paused() and sl.log == [], "paused: no new searches")
+app.pause_searches(False, "admin")
+app._start_searches(sl)
+check(not app.searches_paused() and sl.log == ["Michael Jackson Off the Wall"], f"resumed: searching again ({sl.log})")
+check(app.album(otw)["status"] == "searching", "album is searching")
+sid = app.album(otw)["search_id"]
+app.search_pause_until = time.monotonic() + 600  # as if slskd had rejected a search
+app.search_failures = 3
+before = app.album(bad)
+check(before["status"] == "not_found" and before["attempts"] == 1 and before["next_retry"], "an album waiting for its retry")
+app.configured = lambda: True
+app.slskd = lambda: sl
+r = app.reset_searches("admin")
+a, b2 = app.album(otw), app.album(bad)
+check(r["reset"] == 2, f"two albums reset ({r})")
+check(b2["status"] == "wanted" and b2["attempts"] == 0 and b2["next_retry"] is None and (b2["query_index"] or 0) == 0
+      and b2["search_notes"] is None, "not found → wanted, back-off and notes cleared")
+check(a["status"] == "wanted" and a["search_id"] is None, "mid-search → wanted from the first query")
+check(deleted == [sid], f"its slskd search was deleted ({deleted})")
+check(app.search_pause_until == 0 and app.search_failures == 0, "automatic pause lifted")
+check(app.album(thr)["status"] == "queued", "albums with a source found are left alone")
+ev = app.db.one("SELECT message FROM events ORDER BY id DESC")
+check("Searches reset by admin: 2 album(s)" in ev["message"], "logged in Activity")
+app.pause_searches(True)
+app.reset_searches()
+check(not app.searches_paused(), "reset also resumes a paused search")
+
+print("== over HTTP")
+sys.path.insert(0, os.path.join(ROOT, "tests"))
+import threading  # noqa: E402
+from http.server import ThreadingHTTPServer  # noqa: E402
+from crate.server import make_handler  # noqa: E402
+from client import login_opener  # noqa: E402
+import urllib.request, urllib.error  # noqa: E402,E401
+httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+threading.Thread(target=httpd.serve_forever, daemon=True).start()
+base = f"http://127.0.0.1:{httpd.server_address[1]}"
+ADMIN = login_opener(base)
+app.auth.create("sam", "sam-pass-1234", role="user")
+SAM = login_opener(base, "sam", "sam-pass-1234")
+
+
+def post(op, path, body=None):
+    req = urllib.request.Request(base + path, data=json.dumps(body or {}).encode(), method="POST",
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with op.open(req, timeout=20) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        return {"_status": e.code}
+
+
+def status(op):
+    with op.open(base + "/api/status", timeout=20) as resp:
+        return json.loads(resp.read())
+
+
+check(post(ADMIN, "/api/searches/pause", {"paused": True}) == {"paused": True}, "admin pauses")
+check(status(SAM)["searches_paused"] is True, "everyone sees it's paused")
+check(post(SAM, "/api/searches/pause", {"paused": False}).get("_status") == 403, "users can't resume")
+check(post(SAM, "/api/searches/reset").get("_status") == 403, "users can't reset")
+check(post(ADMIN, "/api/searches/pause", {"paused": False}) == {"paused": False}, "admin resumes")
+r = post(ADMIN, "/api/searches/reset")
+check("reset" in r and "waiting" in r, f"admin resets ({r})")
+
 print()
 if failures:
     print(f"FAILED: {len(failures)}")

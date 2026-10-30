@@ -163,6 +163,49 @@ class App:
                           + (f"; kept {kept} still running" if kept else ""))
         return {"cleared": cleared, "kept": kept}
 
+    # ------------------------------------------------------- search controls
+    def searches_paused(self):
+        return self.settings.bool("searches_paused")
+
+    def pause_searches(self, paused, username=None):
+        """Stop starting new searches (running ones finish; downloads carry on), or resume.
+        Resuming also lifts the automatic pause after slskd rejected a search."""
+        self.db.save_settings({"searches_paused": "true" if paused else "false"})
+        if not paused:
+            self.search_pause_until = 0.0
+            self.search_failures = 0
+            self.last_search_start = 0.0
+        self.db.event(("Searching paused" if paused else "Searching resumed") + (f" by {username}" if username else ""),
+                      username=username)
+        self.wake.set()
+
+    def reset_searches(self, username=None):
+        """Start searching over: everything not found, waiting for a retry, or mid-search
+        goes back to the first search query, with retry back-offs and pauses cleared."""
+        searching = self.db.q("SELECT id, search_id FROM albums WHERE status = 'searching'")
+        if searching and self.configured():
+            sl = self.slskd()
+            for a in searching:
+                if a["search_id"]:
+                    sl.delete_search(a["search_id"])
+        n = self.db.one(
+            "SELECT COUNT(*) n FROM albums WHERE status IN ('searching', 'not_found') "
+            "OR (status = 'wanted' AND (next_retry IS NOT NULL OR COALESCE(query_index, 0) > 0))")["n"]
+        self.db.x(
+            "UPDATE albums SET status = 'wanted', status_detail = 'Waiting to search', search_id = NULL, "
+            "query_index = 0, next_retry = NULL, attempts = 0, tried_users = '[]', candidates = NULL, "
+            "candidate_index = 0, search_notes = NULL, updated_at = ? "
+            "WHERE status IN ('searching', 'not_found') "
+            "OR (status = 'wanted' AND (next_retry IS NOT NULL OR COALESCE(query_index, 0) > 0))", (now_iso(),))
+        self.db.save_settings({"searches_paused": "false"})
+        self.search_pause_until = 0.0
+        self.search_failures = 0
+        self.last_search_start = 0.0
+        self.db.event(f"Searches reset{f' by {username}' if username else ''}: {n} album(s) will be searched "
+                      "again from the start", username=username)
+        self.wake.set()
+        return {"reset": n, "waiting": self._count("wanted")}
+
     def find_in_library(self, artist_name, title, local_name=None):
         """Path of this album in the library, matching the MusicBrainz artist name or the
         artist's folder name in your library (they can differ, e.g. 'AC_DC' vs 'AC/DC')."""
@@ -562,7 +605,7 @@ class App:
         if slots <= 0 or self._count("queued", "downloading") >= max_d * 2:
             return
         mono = time.monotonic()
-        if mono < self.search_pause_until:
+        if mono < self.search_pause_until or self.searches_paused():
             return
         # Space searches out so Soulseek never sees a burst from us.
         if mono - self.last_search_start < SEARCH_SPACING:
